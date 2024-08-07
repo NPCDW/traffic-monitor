@@ -1,7 +1,15 @@
 
 use std::thread;
 use std::time::Duration;
-use systemstat::{System, Platform, saturating_sub_bytes};
+use systemstat::{System, Platform, NetworkStats, saturating_sub_bytes};
+
+pub fn traffic(network_name: &str) -> anyhow::Result<NetworkStats> {
+    let sys = System::new();
+    
+    let network_stats = sys.network_stats(&network_name)?;
+    tracing::debug!("网卡接口统计数据：{:?}", &network_stats);
+    anyhow::Ok(network_stats)
+}
 
 pub fn test() {
     let sys = System::new();

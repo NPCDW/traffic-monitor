@@ -1,0 +1,4 @@
+{
+    "log_level": "debug",
+    "network_name": "eth0"
+}
