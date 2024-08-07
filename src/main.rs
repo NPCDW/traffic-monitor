@@ -26,5 +26,9 @@ async fn main() -> anyhow::Result<()> {
 
     systemstat_svc::test();
 
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
     anyhow::Ok(())
 }

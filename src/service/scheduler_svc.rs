@@ -34,7 +34,7 @@ pub async fn collect_monitor_data(app_state: &AppState) -> anyhow::Result<()> {
     let (start_time, time_interval, uplink_traffic_usage, downlink_traffic_usage);
     if let Some(pre_data) = pre_data {
         start_time = pre_data.end_time.unwrap();
-        time_interval = (end_time.timestamp() - start_time.timestamp()) / 1000;
+        time_interval = end_time.timestamp() - start_time.timestamp();
         let pre_uplink_traffic_readings = pre_data.uplink_traffic_readings.unwrap();
         let pre_downlink_traffic_readings = pre_data.downlink_traffic_readings.unwrap();
         uplink_traffic_usage = if pre_uplink_traffic_readings > uplink_traffic_readings { uplink_traffic_readings } else { uplink_traffic_readings - pre_uplink_traffic_readings };
