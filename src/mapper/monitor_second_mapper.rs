@@ -89,8 +89,8 @@ pub async fn get_pre_data(pool: &Pool<Sqlite>) -> Result<Option<MonitorSecond>, 
 
 pub async fn get_timerange_data(start_time: chrono::DateTime<Local>, end_time: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_second where ");
-    query_builder.push("start_time >= datetime(").push_bind(start_time.timestamp()).push(",'localtime')");
-    query_builder.push(" and start_time < datetime(").push_bind(end_time.timestamp()).push(",'localtime')");
+    query_builder.push("start_time >= datetime(").push_bind(start_time).push(",'localtime')");
+    query_builder.push(" and start_time < datetime(").push_bind(end_time).push(",'localtime')");
     let query = query_builder.build_query_as::<(i64, i64)>();
     tracing::debug!("查询区域秒级监控数据SQL：{}", query.sql());
     let res = query.fetch_optional(pool).await;
@@ -101,7 +101,7 @@ pub async fn get_timerange_data(start_time: chrono::DateTime<Local>, end_time: c
 #[allow(dead_code)]
 pub async fn delete_by_date(date: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     let mut query_builder = QueryBuilder::new("delete from monitor_second where ");
-    query_builder.push("end_time < datetime(").push_bind(date.timestamp()).push(",'localtime')");
+    query_builder.push("end_time < datetime(").push_bind(date).push(",'localtime')");
     let query = query_builder.build();
     tracing::debug!("删除秒级监控数据SQL：{}", query.sql());
     let res = query.execute(pool).await;

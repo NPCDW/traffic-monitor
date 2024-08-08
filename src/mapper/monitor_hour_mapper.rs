@@ -54,8 +54,8 @@ pub async fn get_day_data(day: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> 
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_hour where ");
     query_builder.push("day = date(").push_bind(day).push(",'localtime')");
     let query = query_builder.build_query_as::<(i64, i64)>();
-    tracing::debug!("查询代理节点组SQL：{}", query.sql());
+    tracing::debug!("查询一天的小时监控数据SQL：{}", query.sql());
     let res = query.fetch_optional(pool).await;
-    tracing::debug!("查询代理节点组结果：{:?}", res);
+    tracing::debug!("查询一天的小时监控数据结果：{:?}", res);
     res
 }
