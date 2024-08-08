@@ -1,8 +1,9 @@
 use anyhow::Ok;
 use chrono::Timelike;
+use serde_json::json;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
-use crate::{config::state::AppState, mapper::monitor_second_mapper::{self, MonitorSecond}, mapper::monitor_hour_mapper::{self, MonitorHour}, mapper::monitor_day_mapper::{self, MonitorDay}};
+use crate::{config::state::AppState, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, util::http_util};
 
 use super::systemstat_svc;
 
@@ -122,5 +123,34 @@ pub async fn collect_day_data(app_state: &AppState) -> anyhow::Result<()> {
         downlink_traffic_usage: Some(downlink_traffic_usage),
     };
     monitor_day_mapper::create(monitor_day, &app_state.db_pool).await?;
+    
+    let day = day - chrono::Duration::days(1);
+    monitor_second_mapper::delete_by_date(day, &app_state.db_pool).await?;
+
+    let text = format!("{} [{}]\n上传: {} 下载: {}", day.date_naive().to_string(), &app_state.config.vps_name, traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+    let url = format!("https://api.telegram.org/bot{}/sendMessage", &app_state.config.tg.bot_token);
+    let body = json!({"chat_id": &app_state.config.tg.chat_id, "text": text, "message_thread_id": &app_state.config.tg.topic_id}).to_string();
+    tracing::debug!("forward 消息 body: {}", &body);
+    http_util::post(&url, body).await?;
+
     anyhow::Ok(())
+}
+
+fn traffic_show(bytes: i64) -> String {
+    const KB: i64 = 1024;
+    const MB: i64 = KB * 1024;
+    const GB: i64 = MB * 1024;
+    const TB: i64 = GB * 1024;
+
+    if bytes < KB {
+        return format!("{} B", bytes);
+    } else if bytes < MB {
+        return format!("{:.2} KB", bytes as f64 / KB as f64);
+    } else if bytes < GB {
+        return format!("{:.2} MB", bytes as f64 / MB as f64);
+    } else if bytes < TB {
+        return format!("{:.2} GB", bytes as f64 / GB as f64);
+    } else {
+        return format!("{:.2} TB", bytes as f64 / TB as f64);
+    }
 }

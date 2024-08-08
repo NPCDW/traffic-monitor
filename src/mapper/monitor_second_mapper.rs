@@ -98,7 +98,6 @@ pub async fn get_timerange_data(start_time: chrono::DateTime<Local>, end_time: c
     res
 }
 
-#[allow(dead_code)]
 pub async fn delete_by_date(date: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     let mut query_builder = QueryBuilder::new("delete from monitor_second where ");
     query_builder.push("end_time < datetime(").push_bind(date).push(",'localtime')");

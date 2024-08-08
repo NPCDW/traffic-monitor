@@ -1,0 +1,11 @@
+services:
+  traffic-monitor:
+    image: npcdw/traffic-monitor:latest
+    container_name: traffic-monitor
+    volumes:
+      - "${PWD}/data/:/traffic-monitor/data"
+      - "${PWD}/config/:/traffic-monitor/config"
+    environment:
+      TZ : 'Asia/Shanghai'
+      LANG: 'C.UTF-8'
+      LC_ALL: 'C.UTF-8'

@@ -30,5 +30,5 @@ async fn main() -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    anyhow::Ok(())
+    // anyhow::Ok(())
 }

@@ -2,9 +2,18 @@ use serde::{Serialize, Deserialize};
 use crate::util::file_util;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TgConfig {
+    pub bot_token: String,
+    pub chat_id: String,
+    pub topic_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub log_level: String,
-    pub network_name: String
+    pub network_name: String,
+    pub vps_name: String,
+    pub tg: TgConfig,
 }
 
 const CONFIG_FILE_NAME: &'static str = "config/config.json";
