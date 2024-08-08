@@ -46,10 +46,10 @@ pub async fn create(entity: MonitorSecond, pool: &Pool<Sqlite>) -> Result<sqlx::
     query_builder.push(")  values(");
     let mut separated = query_builder.separated(", ");
     if entity.start_time.is_some() {
-        separated.push_bind(entity.start_time.unwrap());
+        separated.push("datetime(").push_bind_unseparated(entity.start_time.unwrap()).push_unseparated(",'localtime')");
     }
     if entity.end_time.is_some() {
-        separated.push_bind(entity.end_time.unwrap());
+        separated.push("datetime(").push_bind_unseparated(entity.end_time.unwrap()).push_unseparated(",'localtime')");
     }
     if entity.uplink_traffic_readings.is_some() {
         separated.push_bind(entity.uplink_traffic_readings.unwrap());
@@ -81,19 +81,30 @@ pub async fn create(entity: MonitorSecond, pool: &Pool<Sqlite>) -> Result<sqlx::
 pub async fn get_pre_data(pool: &Pool<Sqlite>) -> Result<Option<MonitorSecond>, sqlx::Error> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select * from monitor_second where is_corrected = false order by end_time desc limit 1");
     let query = query_builder.build_query_as::<MonitorSecond>();
-    tracing::debug!("查询代理节点组SQL：{}", query.sql());
+    tracing::debug!("查询上一节点秒级监控数据SQL：{}", query.sql());
     let res = query.fetch_optional(pool).await;
-    tracing::debug!("查询代理节点组结果：{:?}", res);
+    tracing::debug!("查询上一节点秒级监控数据结果：{:?}", res);
+    res
+}
+
+pub async fn get_timerange_data(start_time: chrono::DateTime<Local>, end_time: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_second where ");
+    query_builder.push("start_time >= datetime(").push_bind(start_time.timestamp()).push(",'localtime')");
+    query_builder.push(" and start_time < datetime(").push_bind(end_time.timestamp()).push(",'localtime')");
+    let query = query_builder.build_query_as::<(i64, i64)>();
+    tracing::debug!("查询区域秒级监控数据SQL：{}", query.sql());
+    let res = query.fetch_optional(pool).await;
+    tracing::debug!("查询区域秒级监控数据结果：{:?}", res);
     res
 }
 
 #[allow(dead_code)]
 pub async fn delete_by_date(date: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
-    let mut query_builder = QueryBuilder::new("delete from monitor_second where end_time < ");
-    query_builder.push_bind(date);
+    let mut query_builder = QueryBuilder::new("delete from monitor_second where ");
+    query_builder.push("end_time < datetime(").push_bind(date.timestamp()).push(",'localtime')");
     let query = query_builder.build();
-    tracing::debug!("删除代理节点组SQL：{}", query.sql());
+    tracing::debug!("删除秒级监控数据SQL：{}", query.sql());
     let res = query.execute(pool).await;
-    tracing::debug!("删除代理节点组结果：{:?}", res);
+    tracing::debug!("删除秒级监控数据结果：{:?}", res);
     res
 }
