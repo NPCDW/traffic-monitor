@@ -2,6 +2,7 @@ services:
   traffic-monitor:
     image: npcdw/traffic-monitor:latest
     container_name: traffic-monitor
+    network_mode: "host"
     volumes:
       - "${PWD}/data/:/traffic-monitor/data"
       - "${PWD}/config/:/traffic-monitor/config"

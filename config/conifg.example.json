@@ -1,6 +1,6 @@
 {
     "log_level": "info",
-    "network_name": "网卡名称，例如：eth0",
+    "network_name": "网卡名称，例如: eth0 ens4",
     "vps_name": "自定义名称，用于发送tg通知",
     "tg": {
         "bot_token": "",
