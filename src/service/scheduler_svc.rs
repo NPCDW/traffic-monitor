@@ -12,7 +12,7 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
     
     let app_state_clone = app_state.clone();
     tracing::info!("开始收集监控数据");
-    sched.add(Job::new_cron_job_async("0/15 * * * * ? ", move |_uuid, _l| {
+    sched.add(Job::new_cron_job_async_tz("0/15 * * * * ? ", chrono::Local, move |_uuid, _l| {
         let app_state = app_state_clone.clone();
         Box::pin(async move {
             let res = collect_second_data(&app_state).await;
@@ -23,7 +23,7 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
     })?).await?;
 
     let app_state_clone = app_state.clone();
-    sched.add(Job::new_cron_job_async("0 1 * * * ? ", move |_uuid, _l| {
+    sched.add(Job::new_cron_job_async_tz("0 1 * * * ? ", chrono::Local, move |_uuid, _l| {
         let app_state = app_state_clone.clone();
         Box::pin(async move {
             let res = collect_hour_data(&app_state).await;
@@ -34,7 +34,7 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
     })?).await?;
 
     let app_state_clone = app_state.clone();
-    sched.add(Job::new_cron_job_async("0 2 0 * * ? ", move |_uuid, _l| {
+    sched.add(Job::new_cron_job_async_tz("0 2 0 * * ? ", chrono::Local, move |_uuid, _l| {
         let app_state = app_state_clone.clone();
         Box::pin(async move {
             let res = collect_day_data(&app_state).await;
@@ -69,6 +69,7 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
         downlink_traffic_usage = 0;
         time_interval = 0;
     }
+    tracing::debug!("秒统计: {} ~ {} 上行: {} 下行: {}", &start_time.naive_local().to_string(), end_time.naive_local().to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
     let monitor_second = MonitorSecond {
         id: None,
         create_time: None,
@@ -95,6 +96,7 @@ pub async fn collect_hour_data(app_state: &AppState) -> anyhow::Result<()> {
         return anyhow::Ok(());
     }
     let (uplink_traffic_usage, downlink_traffic_usage) = res.unwrap();
+    tracing::info!("小时统计: {} {} 上行: {} 下行: {}", &day.date_naive().to_string(), start_time.hour(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
     let monitor_hour = MonitorHour {
         id: None,
         create_time: None,
@@ -115,6 +117,7 @@ pub async fn collect_day_data(app_state: &AppState) -> anyhow::Result<()> {
         return anyhow::Ok(());
     }
     let (uplink_traffic_usage, downlink_traffic_usage) = res.unwrap();
+    tracing::info!("天统计: {} 上行: {} 下行: {}", &day.date_naive().to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
     let monitor_day = MonitorDay {
         id: None,
         create_time: None,

@@ -30,7 +30,7 @@ pub async fn create(entity: MonitorHour, pool: &Pool<Sqlite>) -> Result<sqlx::sq
     query_builder.push(")  values(");
     let mut separated = query_builder.separated(", ");
     if entity.day.is_some() {
-        separated.push("date(").push_bind_unseparated(entity.day.unwrap()).push_unseparated(",'localtime')");
+        separated.push("date(").push_bind_unseparated(entity.day.unwrap()).push_unseparated(")");
     }
     if entity.hour.is_some() {
         separated.push_bind(entity.hour.unwrap());
@@ -52,7 +52,7 @@ pub async fn create(entity: MonitorHour, pool: &Pool<Sqlite>) -> Result<sqlx::sq
 
 pub async fn get_day_data(day: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_hour where ");
-    query_builder.push("day = date(").push_bind(day).push(",'localtime')");
+    query_builder.push("day = date(").push_bind(day).push(")");
     let query = query_builder.build_query_as::<(i64, i64)>();
     tracing::debug!("查询一天的小时监控数据SQL：{}", query.sql());
     let res = query.fetch_optional(pool).await;

@@ -11,6 +11,7 @@ pub fn traffic(network_name: &str) -> anyhow::Result<NetworkStats> {
     anyhow::Ok(network_stats)
 }
 
+#[allow(dead_code)]
 pub fn test() {
     let sys = System::new();
     

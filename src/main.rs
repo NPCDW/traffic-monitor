@@ -1,5 +1,5 @@
 use config::state::AppState;
-use service::systemstat_svc;
+// use service::systemstat_svc;
 
 mod config;
 mod mapper;
@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = service::scheduler_svc::init(&app_state).await;
 
-    systemstat_svc::test();
+    // systemstat_svc::test();
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

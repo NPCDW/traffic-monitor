@@ -26,7 +26,7 @@ pub async fn create(entity: MonitorDay, pool: &Pool<Sqlite>) -> Result<sqlx::sql
     query_builder.push(")  values(");
     let mut separated = query_builder.separated(", ");
     if entity.day.is_some() {
-        separated.push("date(").push_bind_unseparated(entity.day.unwrap()).push_unseparated(",'localtime')");
+        separated.push("date(").push_bind_unseparated(entity.day.unwrap()).push_unseparated(")");
     }
     if entity.uplink_traffic_usage.is_some() {
         separated.push_bind(entity.uplink_traffic_usage.unwrap());
