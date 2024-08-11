@@ -1,12 +1,12 @@
-use chrono::{DateTime, Local};
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::{Execute, Pool, QueryBuilder, Sqlite};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, sqlx::FromRow)]
 pub struct MonitorDay {
     pub id: Option<u32>,
-    pub create_time: Option<DateTime<Local>>,
-    pub day: Option<DateTime<Local>>,
+    pub create_time: Option<NaiveDateTime>,
+    pub day: Option<NaiveDate>,
     pub uplink_traffic_usage: Option<i64>,
     pub downlink_traffic_usage: Option<i64>,
 }
@@ -26,7 +26,7 @@ pub async fn create(entity: MonitorDay, pool: &Pool<Sqlite>) -> Result<sqlx::sql
     query_builder.push(")  values(");
     let mut separated = query_builder.separated(", ");
     if entity.day.is_some() {
-        separated.push("date(").push_bind_unseparated(entity.day.unwrap()).push_unseparated(")");
+        separated.push_bind(entity.day.unwrap());
     }
     if entity.uplink_traffic_usage.is_some() {
         separated.push_bind(entity.uplink_traffic_usage.unwrap());

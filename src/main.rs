@@ -22,7 +22,9 @@ async fn main() -> anyhow::Result<()> {
         db_pool: db_pool,
     };
 
-    let _ = service::scheduler_svc::init(&app_state).await;
+    service::statistics_svc::frist_collect(&app_state).await?;
+
+    service::scheduler_svc::init(&app_state).await?;
 
     // systemstat_svc::test();
 

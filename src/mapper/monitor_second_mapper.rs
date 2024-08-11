@@ -1,13 +1,13 @@
-use chrono::{DateTime, Local};
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::{Execute, Pool, QueryBuilder, Sqlite};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, sqlx::FromRow)]
 pub struct MonitorSecond {
     pub id: Option<u32>,
-    pub create_time: Option<DateTime<Local>>,
-    pub start_time: Option<DateTime<Local>>,
-    pub end_time: Option<DateTime<Local>>,
+    pub create_time: Option<NaiveDateTime>,
+    pub start_time: Option<NaiveDateTime>,
+    pub end_time: Option<NaiveDateTime>,
     pub uplink_traffic_readings: Option<i64>,
     pub downlink_traffic_readings: Option<i64>,
     pub uplink_traffic_usage: Option<i64>,
@@ -46,10 +46,10 @@ pub async fn create(entity: MonitorSecond, pool: &Pool<Sqlite>) -> Result<sqlx::
     query_builder.push(")  values(");
     let mut separated = query_builder.separated(", ");
     if entity.start_time.is_some() {
-        separated.push("datetime(").push_bind_unseparated(entity.start_time.unwrap()).push_unseparated(")");
+        separated.push_bind(entity.start_time.unwrap().format("%Y-%m-%dT%H:%M:%S").to_string());
     }
     if entity.end_time.is_some() {
-        separated.push("datetime(").push_bind_unseparated(entity.end_time.unwrap()).push_unseparated(")");
+        separated.push_bind(entity.end_time.unwrap().format("%Y-%m-%dT%H:%M:%S").to_string());
     }
     if entity.uplink_traffic_readings.is_some() {
         separated.push_bind(entity.uplink_traffic_readings.unwrap());
@@ -87,10 +87,10 @@ pub async fn get_pre_data(pool: &Pool<Sqlite>) -> Result<Option<MonitorSecond>, 
     res
 }
 
-pub async fn get_timerange_data(start_time: chrono::DateTime<Local>, end_time: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
+pub async fn get_timerange_data(start_time: NaiveDateTime, end_time: NaiveDateTime, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_second where ");
-    query_builder.push("start_time >= datetime(").push_bind(start_time).push(")");
-    query_builder.push(" and start_time < datetime(").push_bind(end_time).push(")");
+    query_builder.push("start_time >= ").push_bind(start_time.format("%Y-%m-%dT%H:%M:%S").to_string());
+    query_builder.push(" and start_time < ").push_bind(end_time.format("%Y-%m-%dT%H:%M:%S").to_string());
     let query = query_builder.build_query_as::<(i64, i64)>();
     tracing::debug!("查询区域秒级监控数据SQL：{}", query.sql());
     let res = query.fetch_optional(pool).await;
@@ -98,9 +98,9 @@ pub async fn get_timerange_data(start_time: chrono::DateTime<Local>, end_time: c
     res
 }
 
-pub async fn delete_by_date(date: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+pub async fn delete_by_date(date: NaiveDateTime, pool: &Pool<Sqlite>) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     let mut query_builder = QueryBuilder::new("delete from monitor_second where ");
-    query_builder.push("end_time < datetime(").push_bind(date).push(")");
+    query_builder.push("end_time < ").push_bind(date.format("%Y-%m-%dT%H:%M:%S").to_string());
     let query = query_builder.build();
     tracing::debug!("删除秒级监控数据SQL：{}", query.sql());
     let res = query.execute(pool).await;

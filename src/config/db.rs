@@ -9,7 +9,7 @@ pub async fn init() -> anyhow::Result<Pool<Sqlite>> {
 
     let options = SqliteConnectOptions::new()
         .filename(db_path)
-        .journal_mode(SqliteJournalMode::Wal)
+        .journal_mode(SqliteJournalMode::Delete)
         .create_if_missing(true)
         .foreign_keys(false);
 

@@ -1,12 +1,12 @@
-use chrono::{DateTime, Local};
+use chrono::{NaiveDateTime, NaiveDate};
 use serde::{Deserialize, Serialize};
 use sqlx::{Execute, Pool, QueryBuilder, Sqlite};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, sqlx::FromRow)]
 pub struct MonitorHour {
     pub id: Option<u32>,
-    pub create_time: Option<DateTime<Local>>,
-    pub day: Option<DateTime<Local>>,
+    pub create_time: Option<NaiveDateTime>,
+    pub day: Option<NaiveDate>,
     pub hour: Option<u32>,
     pub uplink_traffic_usage: Option<i64>,
     pub downlink_traffic_usage: Option<i64>,
@@ -30,7 +30,7 @@ pub async fn create(entity: MonitorHour, pool: &Pool<Sqlite>) -> Result<sqlx::sq
     query_builder.push(")  values(");
     let mut separated = query_builder.separated(", ");
     if entity.day.is_some() {
-        separated.push("date(").push_bind_unseparated(entity.day.unwrap()).push_unseparated(")");
+        separated.push_bind(entity.day.unwrap());
     }
     if entity.hour.is_some() {
         separated.push_bind(entity.hour.unwrap());
@@ -50,9 +50,9 @@ pub async fn create(entity: MonitorHour, pool: &Pool<Sqlite>) -> Result<sqlx::sq
     res
 }
 
-pub async fn get_day_data(day: chrono::DateTime<Local>, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
+pub async fn get_day_data(day: NaiveDate, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_hour where ");
-    query_builder.push("day = date(").push_bind(day).push(")");
+    query_builder.push("day = ").push_bind(day);
     let query = query_builder.build_query_as::<(i64, i64)>();
     tracing::debug!("查询一天的小时监控数据SQL：{}", query.sql());
     let res = query.fetch_optional(pool).await;
