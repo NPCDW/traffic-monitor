@@ -1,0 +1,17 @@
+{
+    "network_name": "ens4",
+    "log_level": "info",
+    "vps_name": "🇭🇰 gcp-hk",
+    "tg": {
+        "bot_token": "",
+        "chat_id": "",
+        "topic_id": 0
+    },
+    "cycle": {
+        "unit": "day",
+        "each": "90",
+        "traffic_reset_date": "2024-08-29",
+        "traffic_limit": "625GB",
+        "statistic_method": "out"
+    }
+}

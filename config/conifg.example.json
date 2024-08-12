@@ -1,10 +1,18 @@
 {
-    "log_level": "info",
     "network_name": "网卡名称，例如: eth0 ens4",
+    "log_level": "info",
     "vps_name": "自定义名称，用于发送tg通知",
     "tg": {
         "bot_token": "",
         "chat_id": "",
         "topic_id": 0
+    },
+    "cycle": {
+        "unit": "单位，当前支持 天: day 月: month",
+        "each": "每多少天或每几个月",
+        "traffic_reset_date": "流量重置日期，任意一次重置日即可，示例: 2024-08-05",
+        "traffic_limit": "流量限制，示例: 200G",
+        "statistic_method": "统计方法，当前支持 双向计算: sum(in,out) 只记出方向: out 入出取大: max(in,out)",
+        "exec": "（可选）流量到达限制后执行的命令，为空时流量到达限制不进行任何操作，示例: 立即关机 shutdown -h now (如果在 docker 中，需执行: nsenter -a -t 1 sh -c 'shutdown -h now')"
     }
 }

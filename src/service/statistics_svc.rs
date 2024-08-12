@@ -105,11 +105,13 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
     let day = statistic_date - chrono::Duration::days(1);
     monitor_second_mapper::delete_by_date(day.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap()), &app_state.db_pool).await?;
 
-    let text = format!("{} [{}]\n上传: {} 下载: {}", day.to_string(), &app_state.config.vps_name, traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
-    let url = format!("https://api.telegram.org/bot{}/sendMessage", &app_state.config.tg.bot_token);
-    let body = json!({"chat_id": &app_state.config.tg.chat_id, "text": text, "message_thread_id": &app_state.config.tg.topic_id}).to_string();
-    tracing::debug!("forward 消息 body: {}", &body);
-    http_util::post(&url, body).await?;
+    if let Some(tg) = &app_state.config.tg {
+        let text = format!("{} {}\n上传: {} 下载: {}", day.to_string(), &app_state.config.vps_name, traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+        let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
+        let body = json!({"chat_id": tg.chat_id, "text": text, "message_thread_id": tg.topic_id}).to_string();
+        tracing::debug!("forward 消息 body: {}", &body);
+        http_util::post(&url, body).await?;
+    }
 
     anyhow::Ok(())
 }

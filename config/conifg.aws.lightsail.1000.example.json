@@ -1,0 +1,18 @@
+{
+    "network_name": "ens5",
+    "log_level": "info",
+    "vps_name": "🇸🇬 aws-sg",
+    "tg": {
+        "bot_token": "",
+        "chat_id": "",
+        "topic_id": 0
+    },
+    "cycle": {
+        "unit": "month",
+        "each": "1",
+        "traffic_reset_date": "2024-08-05",
+        "traffic_limit": "1TB",
+        "statistic_method": "out",
+        "exec": "shutdown -h now"
+    }
+}

@@ -2,6 +2,16 @@ use serde::{Serialize, Deserialize};
 use crate::util::file_util;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CycleConfig {
+    pub unit: String,
+    pub each: String,
+    pub traffic_reset_date: String,
+    pub traffic_limit: String,
+    pub statistic_method: String,
+    pub exec: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TgConfig {
     pub bot_token: String,
     pub chat_id: String,
@@ -10,10 +20,11 @@ pub struct TgConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
-    pub log_level: String,
     pub network_name: String,
+    pub log_level: String,
     pub vps_name: String,
-    pub tg: TgConfig,
+    pub tg: Option<TgConfig>,
+    pub cycle: Option<CycleConfig>,
 }
 
 const CONFIG_FILE_NAME: &'static str = "config/config.json";
