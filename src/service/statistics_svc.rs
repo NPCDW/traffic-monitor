@@ -66,7 +66,7 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     };
     monitor_second_mapper::create(monitor_second, &app_state.db_pool).await?;
 
-    let exceeds_limit = verify_exceeds_limit(app_state, (uplink_traffic_readings, downlink_traffic_readings)).await?;
+    let exceeds_limit = verify_exceeds_limit(app_state, (uplink_traffic_usage, downlink_traffic_usage)).await?;
     if exceeds_limit {
         tracing::warn!("流量超限");
     }
@@ -197,7 +197,12 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
         CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
         CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
     };
-    if cycle.traffic_usage + today_traffic_usage >= cycle.traffic_limit {
+    let traffic_limit = cycle.traffic_limit;
+    let traffic_usage = cycle.traffic_usage + today_traffic_usage;
+    tracing::info!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
+    cycle.traffic_usage = traffic_usage;
+    *app_state.cycle.write().await = Some(cycle);
+    if traffic_usage >= traffic_limit {
         return anyhow::Ok(true);
     }
     return anyhow::Ok(false);
