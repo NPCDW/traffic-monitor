@@ -66,7 +66,10 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     };
     monitor_second_mapper::create(monitor_second, &app_state.db_pool).await?;
 
-    verify_cycle_limit(app_state, (uplink_traffic_readings, downlink_traffic_readings)).await?;
+    let exceeds_limit = verify_exceeds_limit(app_state, (uplink_traffic_readings, downlink_traffic_readings)).await?;
+    if exceeds_limit {
+        tracing::warn!("流量超限");
+    }
 
     anyhow::Ok(())
 }
@@ -157,10 +160,10 @@ fn traffic_show(bytes: i64) -> String {
     }
 }
 
-async fn verify_cycle_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<bool> {
+async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<bool> {
     let config = &app_state.config;
     if config.liftcycle.is_none() {
-        return anyhow::Ok(true);
+        return anyhow::Ok(false);
     }
     let mut cycle = app_state.cycle.read().await.clone();
     if cycle.is_none() || cycle.as_ref().unwrap().current_cycle_end_date < chrono::Local::now().date_naive() {
@@ -174,9 +177,9 @@ async fn verify_cycle_limit(app_state: &AppState, (uplink_traffic_usage, downlin
         CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
     };
     if cycle.traffic_usage + today_traffic_usage >= cycle.traffic_limit {
-        return anyhow::Ok(false);
+        return anyhow::Ok(true);
     }
-    return anyhow::Ok(true);
+    return anyhow::Ok(false);
 }
 
 async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
