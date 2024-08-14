@@ -119,18 +119,37 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
         let mut text = format!("{}\n{} 用量\n上传: {}\n下载: {}", &app_state.config.vps_name, day.to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
         let cycle = app_state.cycle.read().await.clone();
         if let Some(cycle) = cycle {
+            if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
+                return anyhow::Ok(());
+            }
             let yesterday_traffic_usage = match cycle.statistic_method {
                 CycleStatisticMethod::MaxInOut => std::cmp::max(uplink_traffic_usage, downlink_traffic_usage),
                 CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
                 CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
             };
-            let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(cycle.current_cycle_start_date, cycle.current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
-            let cycle_traffic_usage = match cycle.statistic_method {
-                CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage),
-                CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
-                CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
-            };
-            text = format!("\n计入流量: {}\n周期已用量:\n{}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days());
+            if cycle.current_cycle_start_date == chrono::Local::now().date_naive() {
+                let pre_start = match cycle.cycle_type {
+                    CycleType::DAY(each, _) =>  cycle.current_cycle_start_date - chrono::Duration::days(each),
+                    CycleType::MONTH(each, _) => add_months(cycle.current_cycle_start_date, -each as i32),
+                    _ => return Err(anyhow!("cycle_type 不会出现此类型")),
+                };
+                let pre_end = cycle.current_cycle_start_date - chrono::Duration::days(1);
+                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(pre_start, pre_end, &app_state.db_pool).await?.unwrap_or((0, 0));
+                let cycle_traffic_usage = match cycle.statistic_method {
+                    CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage),
+                    CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
+                    CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
+                };
+                text = format!("\n计入流量: {}\n周期已用量:\n{}/{}\n上一周期已结束", traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit));
+            } else {
+                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(cycle.current_cycle_start_date, cycle.current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
+                let cycle_traffic_usage = match cycle.statistic_method {
+                    CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage),
+                    CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
+                    CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
+                };
+                text = format!("\n计入流量: {}\n周期已用量:\n{}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1);
+            }
         }
         let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
         let body = json!({"chat_id": tg.chat_id, "text": text, "message_thread_id": tg.topic_id}).to_string();
@@ -165,12 +184,14 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     if config.liftcycle.is_none() {
         return anyhow::Ok(false);
     }
-    let mut cycle = app_state.cycle.read().await.clone();
-    if cycle.is_none() || cycle.as_ref().unwrap().current_cycle_end_date < chrono::Local::now().date_naive() {
+    let mut cycle = app_state.cycle.read().await.clone().unwrap();
+    if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
+        if let CycleType::ONCE(_, _) = cycle.cycle_type {
+            return anyhow::Ok(false);
+        }
         generate_cycle(app_state).await?;
-        cycle = app_state.cycle.read().await.clone();
+        cycle = app_state.cycle.read().await.clone().unwrap();
     }
-    let cycle = cycle.unwrap();
     let today_traffic_usage = match cycle.statistic_method {
         CycleStatisticMethod::MaxInOut => std::cmp::max(uplink_traffic_usage, downlink_traffic_usage),
         CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
@@ -214,7 +235,7 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
                 CycleType::DAY(each, traffic_reset_date) =>  traffic_reset_date + chrono::Duration::days(each * add_or_sub),
                 CycleType::MONTH(each, traffic_reset_date) => add_months(traffic_reset_date, (each * add_or_sub) as i32),
                 _ => return Err(anyhow!("cycle_type 不会出现此类型")),
-            };
+            } - chrono::Duration::days(1);
             if now >= traffic_reset_date && now <= end {
                 current_cycle_start_date = std::cmp::min(traffic_reset_date, end);
                 current_cycle_end_date = std::cmp::max(traffic_reset_date, end);
