@@ -4,7 +4,7 @@ use crate::util::file_util;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CycleConfig {
     pub cycle: String,
-    pub each: Option<u32>,
+    pub each: Option<i64>,
     pub traffic_reset_date: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,

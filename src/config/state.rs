@@ -1,16 +1,19 @@
+use std::sync::Arc;
+
 use sqlx::{Pool, Sqlite};
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub enum CycleStatisticMethod {
-    SUM_IN_OUT,
-    MAX_IN_OUT,
-    ONLY_OUT,
+    SumInOut,
+    MaxInOut,
+    OnlyOut,
 }
 
 #[derive(Clone)]
 pub enum CycleType {
-    DAY(u32, chrono::NaiveDate),
-    MONTH(u32, chrono::NaiveDate),
+    DAY(i64, chrono::NaiveDate),
+    MONTH(i64, chrono::NaiveDate),
     ONCE(chrono::NaiveDate, chrono::NaiveDate),
 }
 
@@ -29,5 +32,5 @@ pub struct AppState {
     pub config: crate::config::app_config::Config,
     pub db_pool: Pool<Sqlite>,
 
-    pub cycle: Option<CycleAppState>,
+    pub cycle: Arc<RwLock<Option<CycleAppState>>>,
 }

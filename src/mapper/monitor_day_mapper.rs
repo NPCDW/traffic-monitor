@@ -42,3 +42,14 @@ pub async fn create(entity: MonitorDay, pool: &Pool<Sqlite>) -> Result<sqlx::sql
     tracing::debug!("插入天监控数据结果：{:?}", res);
     res
 }
+
+pub async fn get_daterange_data(start_date: NaiveDate, end_date: NaiveDate, pool: &Pool<Sqlite>) -> Result<Option<(i64, i64)>, sqlx::Error> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("select sum(uplink_traffic_usage), sum(downlink_traffic_usage) from monitor_day where ");
+    query_builder.push("day >= ").push_bind(start_date);
+    query_builder.push(" and day <= ").push_bind(end_date);
+    let query = query_builder.build_query_as::<(i64, i64)>();
+    tracing::debug!("查询区域天监控数据SQL：{}", query.sql());
+    let res = query.fetch_optional(pool).await;
+    tracing::debug!("查询区域天监控数据结果：{:?}", res);
+    res
+}

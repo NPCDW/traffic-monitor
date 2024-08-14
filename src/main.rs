@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use config::state::AppState;
+use tokio::sync::RwLock;
 // use service::systemstat_svc;
 
 mod config;
@@ -20,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         config: config,
         db_pool: db_pool,
-        cycle: None,
+        cycle: Arc::new(RwLock::new(None)),
     };
 
     service::statistics_svc::frist_collect(&app_state).await?;

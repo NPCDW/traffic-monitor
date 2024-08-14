@@ -1,10 +1,13 @@
+use std::cmp::min;
+
 use anyhow::anyhow;
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde_json::json;
 
 use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::http_util};
 
 pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
+    generate_cycle(app_state).await?;
     let now = chrono::Local::now().naive_local();
     let pre_data = monitor_second_mapper::get_pre_data(&app_state.db_pool).await?;
     if let None = pre_data {
@@ -63,7 +66,7 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     };
     monitor_second_mapper::create(monitor_second, &app_state.db_pool).await?;
 
-    verify_cycle_limit(app_state).await;
+    verify_cycle_limit(app_state, (uplink_traffic_readings, downlink_traffic_readings)).await?;
 
     anyhow::Ok(())
 }
@@ -110,7 +113,22 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
     monitor_second_mapper::delete_by_date(day.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap()), &app_state.db_pool).await?;
 
     if let Some(tg) = &app_state.config.tg {
-        let text = format!("{} {}\n上传: {} 下载: {}", day.to_string(), &app_state.config.vps_name, traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+        let mut text = format!("{}\n{} 用量\n上传: {}\n下载: {}", &app_state.config.vps_name, day.to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+        let cycle = app_state.cycle.read().await.clone();
+        if let Some(cycle) = cycle {
+            let yesterday_traffic_usage = match cycle.statistic_method {
+                CycleStatisticMethod::MaxInOut => std::cmp::max(uplink_traffic_usage, downlink_traffic_usage),
+                CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
+                CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
+            };
+            let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(cycle.current_cycle_start_date, cycle.current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
+            let cycle_traffic_usage = match cycle.statistic_method {
+                CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage),
+                CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
+                CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
+            };
+            text = format!("\n计入流量: {}\n周期已用量:\n{}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days());
+        }
         let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
         let body = json!({"chat_id": tg.chat_id, "text": text, "message_thread_id": tg.topic_id}).to_string();
         tracing::debug!("forward 消息 body: {}", &body);
@@ -139,48 +157,126 @@ fn traffic_show(bytes: i64) -> String {
     }
 }
 
-async fn verify_cycle_limit(app_state: &AppState) -> anyhow::Result<()> {
+async fn verify_cycle_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<bool> {
     let config = &app_state.config;
     if config.liftcycle.is_none() {
-        return anyhow::Ok(());
+        return anyhow::Ok(true);
+    }
+    let mut cycle = app_state.cycle.read().await.clone();
+    if cycle.is_none() || cycle.as_ref().unwrap().current_cycle_end_date < chrono::Local::now().date_naive() {
+        generate_cycle(app_state).await?;
+        cycle = app_state.cycle.read().await.clone();
+    }
+    let cycle = cycle.unwrap();
+    let today_traffic_usage = match cycle.statistic_method {
+        CycleStatisticMethod::MaxInOut => std::cmp::max(uplink_traffic_usage, downlink_traffic_usage),
+        CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
+        CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
+    };
+    if cycle.traffic_usage + today_traffic_usage >= cycle.traffic_limit {
+        return anyhow::Ok(false);
+    }
+    return anyhow::Ok(true);
+}
+
+async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
+    let config = &app_state.config;
+    if config.liftcycle.is_none() {
+        return Err(anyhow!("config[liftcycle] 没有配置，生成流量周期失败"));
     }
     let liftcycle = config.liftcycle.as_ref().unwrap();
-    if let Some(cycle) = &app_state.cycle {
-        
+    let cycle_type = match liftcycle.cycle.as_str() {
+        "day" => CycleType::DAY(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
+        "month" => CycleType::MONTH(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
+        "once" => CycleType::ONCE(chrono::NaiveDate::parse_from_str(liftcycle.start_date.as_ref().unwrap(), "%Y-%m-%d")?, chrono::NaiveDate::parse_from_str(liftcycle.end_date.as_ref().unwrap(), "%Y-%m-%d")?),
+        _ => return Err(anyhow!("config[liftcycle][cycle] 配置填写错误，没有这样的类型")),
+    };
+    let now = chrono::Local::now().date_naive();
+    let (current_cycle_start_date, current_cycle_end_date);
+    if let CycleType::ONCE(start, end) = cycle_type {
+        current_cycle_start_date = start;
+        current_cycle_end_date = end;
     } else {
-        let cycle_type = match liftcycle.cycle.as_str() {
-            "day" => CycleType::DAY(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
-            "month" => CycleType::MONTH(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
-            "once" => CycleType::ONCE(chrono::NaiveDate::parse_from_str(liftcycle.start_date.as_ref().unwrap(), "%Y-%m-%d")?, chrono::NaiveDate::parse_from_str(liftcycle.end_date.as_ref().unwrap(), "%Y-%m-%d")?),
-            _ => return Err(anyhow!("config[liftcycle][cycle] 配置填写错误，没有这样的类型")),
+        let (each, mut traffic_reset_date) = match cycle_type {
+            CycleType::DAY(each, traffic_reset_date) => (each, traffic_reset_date),
+            CycleType::MONTH(each, traffic_reset_date) => (each, traffic_reset_date),
+            _ => return Err(anyhow!("cycle_type 不会出现此类型")),
         };
-        let statistic_method = match liftcycle.statistic_method.as_str() {
-            "sum(in,out)" => CycleStatisticMethod::SUM_IN_OUT,
-            "max(in,out)" => CycleStatisticMethod::MAX_IN_OUT,
-            "out" => CycleStatisticMethod::ONLY_OUT,
-            _ => return Err(anyhow!("config[liftcycle][statistic_method] 配置填写错误，没有这样的类型")),
-        };
-        let traffic_limit = &liftcycle.traffic_limit.replace(" ", "").replace(",", "").replace("_", "");
-        let traffic_limit = if let Some(traffic_limit) = traffic_limit.strip_suffix("MB") {
-            let limit = traffic_limit.parse::<i64>()?;
-            limit * 1024 * 1024
-        } else if let Some(traffic_limit) = traffic_limit.strip_suffix("GB") {
-            let limit = traffic_limit.parse::<i64>()?;
-            limit * 1024 * 1024 * 1024
-        } else if let Some(traffic_limit) = traffic_limit.strip_suffix("TB") {
-            let limit = traffic_limit.parse::<i64>()?;
-            limit * 1024 * 1024 * 1024 * 1024
-        } else {
-            return Err(anyhow!("config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"));
-        };
-        let cycle = CycleAppState {
-            cycle_type,
-            current_cycle_start_date,
-            current_cycle_end_date,
-            traffic_usage,
-            traffic_limit,
-            statistic_method,
-        };
+        if each <= 0 {
+            return Err(anyhow!("config[liftcycle][each] 配置填写错误，每多少天或每多少个月重置流量，必须是一个大于0的数"));
+        }
+        let add_or_sub = if now >= traffic_reset_date { 1 } else { -1 };
+        loop {
+            let end = match cycle_type {
+                CycleType::DAY(each, traffic_reset_date) =>  traffic_reset_date + chrono::Duration::days(each * add_or_sub),
+                CycleType::MONTH(each, traffic_reset_date) => add_months(traffic_reset_date, (each * add_or_sub) as i32),
+                _ => return Err(anyhow!("cycle_type 不会出现此类型")),
+            };
+            if now >= traffic_reset_date && now <= end {
+                current_cycle_start_date = std::cmp::min(traffic_reset_date, end);
+                current_cycle_end_date = std::cmp::max(traffic_reset_date, end);
+                break;
+            }
+            traffic_reset_date = end;
+        }
     }
-    return anyhow::Ok(());
+    let statistic_method = match liftcycle.statistic_method.as_str() {
+        "sum(in,out)" => CycleStatisticMethod::SumInOut,
+        "max(in,out)" => CycleStatisticMethod::MaxInOut,
+        "out" => CycleStatisticMethod::OnlyOut,
+        _ => return Err(anyhow!("config[liftcycle][statistic_method] 配置填写错误，没有这样的类型")),
+    };
+    let traffic_limit = &liftcycle.traffic_limit.replace(" ", "").replace(",", "").replace("_", "");
+    let traffic_limit = if let Some(traffic_limit) = traffic_limit.strip_suffix("MB") {
+        let limit = traffic_limit.parse::<i64>()?;
+        limit * 1024 * 1024
+    } else if let Some(traffic_limit) = traffic_limit.strip_suffix("GB") {
+        let limit = traffic_limit.parse::<i64>()?;
+        limit * 1024 * 1024 * 1024
+    } else if let Some(traffic_limit) = traffic_limit.strip_suffix("TB") {
+        let limit = traffic_limit.parse::<i64>()?;
+        limit * 1024 * 1024 * 1024 * 1024
+    } else {
+        return Err(anyhow!("config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"));
+    };
+    let now = chrono::Local::now().date_naive();
+    let day_start_time = now.and_hms_opt(0, 0, 0).unwrap();
+    let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(current_cycle_start_date, current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
+    let (today_uplink_traffic_usage, today_downlink_traffic_usage) = monitor_second_mapper::get_timerange_data(day_start_time, day_start_time + Duration::days(1), &app_state.db_pool).await?.unwrap_or((0, 0));
+    let traffic_usage = match statistic_method {
+        CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) + std::cmp::max(today_uplink_traffic_usage, today_downlink_traffic_usage),
+        CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage + today_uplink_traffic_usage,
+        CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage + today_uplink_traffic_usage + today_downlink_traffic_usage,
+    };
+    *app_state.cycle.write().await = Some(CycleAppState {
+        cycle_type,
+        current_cycle_start_date,
+        current_cycle_end_date,
+        traffic_usage,
+        traffic_limit,
+        statistic_method,
+    });
+    anyhow::Ok(())
+}
+
+fn add_months(date: NaiveDate, months: i32) -> NaiveDate {
+    let mut year = date.year();
+    let month = date.month() as i32;
+    let day = date.day();
+
+    let mut new_month = month + months;
+    if new_month > 12 {
+        year += new_month / 12;
+        new_month %= 12;
+    } else if new_month < 1 {
+        year += (new_month - 1) / 12;
+        new_month = (new_month - 1) % 12 + 12;
+    }
+
+    let new_month = new_month as u32;
+    let last_day_of_new_month = NaiveDate::from_ymd_opt(year, new_month, 1).unwrap()
+        .with_day0(0).unwrap().day();
+    let new_day = min(day, last_day_of_new_month);
+
+    NaiveDate::from_ymd_opt(year, new_month, new_day).unwrap()
 }
