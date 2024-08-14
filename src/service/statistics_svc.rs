@@ -199,7 +199,7 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     };
     let traffic_limit = cycle.traffic_limit;
     let traffic_usage = cycle.traffic_usage + today_traffic_usage;
-    tracing::info!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
+    tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
     cycle.traffic_usage = traffic_usage;
     *app_state.cycle.write().await = Some(cycle);
     if traffic_usage >= traffic_limit {
