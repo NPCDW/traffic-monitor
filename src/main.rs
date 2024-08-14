@@ -20,6 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         config: config,
         db_pool: db_pool,
+        cycle: None,
     };
 
     service::statistics_svc::frist_collect(&app_state).await?;

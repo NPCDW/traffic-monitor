@@ -1,7 +1,8 @@
+use anyhow::anyhow;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde_json::json;
 
-use crate::{config::state::AppState, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::http_util};
+use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::http_util};
 
 pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
     let now = chrono::Local::now().naive_local();
@@ -61,6 +62,9 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
         is_corrected: Some(0),
     };
     monitor_second_mapper::create(monitor_second, &app_state.db_pool).await?;
+
+    verify_cycle_limit(app_state).await;
+
     anyhow::Ok(())
 }
 
@@ -133,4 +137,50 @@ fn traffic_show(bytes: i64) -> String {
     } else {
         return format!("{:.2} TB", bytes as f64 / TB as f64);
     }
+}
+
+async fn verify_cycle_limit(app_state: &AppState) -> anyhow::Result<()> {
+    let config = &app_state.config;
+    if config.liftcycle.is_none() {
+        return anyhow::Ok(());
+    }
+    let liftcycle = config.liftcycle.as_ref().unwrap();
+    if let Some(cycle) = &app_state.cycle {
+        
+    } else {
+        let cycle_type = match liftcycle.cycle.as_str() {
+            "day" => CycleType::DAY(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
+            "month" => CycleType::MONTH(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
+            "once" => CycleType::ONCE(chrono::NaiveDate::parse_from_str(liftcycle.start_date.as_ref().unwrap(), "%Y-%m-%d")?, chrono::NaiveDate::parse_from_str(liftcycle.end_date.as_ref().unwrap(), "%Y-%m-%d")?),
+            _ => return Err(anyhow!("config[liftcycle][cycle] 配置填写错误，没有这样的类型")),
+        };
+        let statistic_method = match liftcycle.statistic_method.as_str() {
+            "sum(in,out)" => CycleStatisticMethod::SUM_IN_OUT,
+            "max(in,out)" => CycleStatisticMethod::MAX_IN_OUT,
+            "out" => CycleStatisticMethod::ONLY_OUT,
+            _ => return Err(anyhow!("config[liftcycle][statistic_method] 配置填写错误，没有这样的类型")),
+        };
+        let traffic_limit = &liftcycle.traffic_limit.replace(" ", "").replace(",", "").replace("_", "");
+        let traffic_limit = if let Some(traffic_limit) = traffic_limit.strip_suffix("MB") {
+            let limit = traffic_limit.parse::<i64>()?;
+            limit * 1024 * 1024
+        } else if let Some(traffic_limit) = traffic_limit.strip_suffix("GB") {
+            let limit = traffic_limit.parse::<i64>()?;
+            limit * 1024 * 1024 * 1024
+        } else if let Some(traffic_limit) = traffic_limit.strip_suffix("TB") {
+            let limit = traffic_limit.parse::<i64>()?;
+            limit * 1024 * 1024 * 1024 * 1024
+        } else {
+            return Err(anyhow!("config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"));
+        };
+        let cycle = CycleAppState {
+            cycle_type,
+            current_cycle_start_date,
+            current_cycle_end_date,
+            traffic_usage,
+            traffic_limit,
+            statistic_method,
+        };
+    }
+    return anyhow::Ok(());
 }

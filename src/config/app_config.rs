@@ -3,9 +3,11 @@ use crate::util::file_util;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CycleConfig {
-    pub unit: String,
-    pub each: String,
-    pub traffic_reset_date: String,
+    pub cycle: String,
+    pub each: Option<u32>,
+    pub traffic_reset_date: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
     pub traffic_limit: String,
     pub statistic_method: String,
     pub exec: Option<String>,
@@ -24,7 +26,7 @@ pub struct Config {
     pub log_level: String,
     pub vps_name: String,
     pub tg: Option<TgConfig>,
-    pub cycle: Option<CycleConfig>,
+    pub liftcycle: Option<CycleConfig>,
 }
 
 const CONFIG_FILE_NAME: &'static str = "config/config.json";

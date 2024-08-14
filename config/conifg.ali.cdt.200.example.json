@@ -7,8 +7,8 @@
         "chat_id": "",
         "topic_id": 0
     },
-    "cycle": {
-        "unit": "month",
+    "liftcycle": {
+        "cycle": "month",
         "each": "1",
         "traffic_reset_date": "2024-08-01",
         "traffic_limit": "200GB",
