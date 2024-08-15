@@ -140,7 +140,7 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
                     CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
                     CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
                 };
-                text = format!("\n计入流量: {}\n周期已用量:\n{}/{}\n上一周期已结束", traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit));
+                text = format!("{}\n计入流量: {}\n周期已用量:\n{}/{}\n上一周期已结束", text, traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit));
             } else {
                 let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(cycle.current_cycle_start_date, cycle.current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
                 let cycle_traffic_usage = match cycle.statistic_method {
@@ -148,7 +148,7 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
                     CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
                     CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
                 };
-                text = format!("\n计入流量: {}\n周期已用量:\n{}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1);
+                text = format!("{}\n计入流量: {}\n周期已用量:\n{}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", text, traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1);
             }
         }
         let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
