@@ -246,9 +246,9 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
                     }
                 },
                 _ => return Err(anyhow!("cycle_type 不会出现此类型")),
-            } - chrono::Duration::days(add_or_sub);
+            };
             current_cycle_start_date = std::cmp::min(traffic_reset_date, end);
-            current_cycle_end_date = std::cmp::max(traffic_reset_date, end);
+            current_cycle_end_date = std::cmp::max(traffic_reset_date, end) - chrono::Duration::days(1);
             if now >= current_cycle_start_date && now <= current_cycle_end_date {
                 break;
             }
