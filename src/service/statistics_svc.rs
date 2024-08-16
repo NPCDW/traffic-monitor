@@ -1,7 +1,7 @@
 use std::cmp::min;
 
 use anyhow::anyhow;
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Datelike, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde_json::json;
 
 use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::http_util};
@@ -116,7 +116,7 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
     monitor_second_mapper::delete_by_date(day.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap()), &app_state.db_pool).await?;
 
     if let Some(tg) = &app_state.config.tg {
-        let mut text = format!("{}\n{} 用量\n上传: {}\n下载: {}", &app_state.config.vps_name, day.to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+        let mut text = format!("{} {}\n上传: {} 下载: {}", day.to_string(), &app_state.config.vps_name, traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
         let cycle = app_state.cycle.read().await.clone();
         if let Some(cycle) = cycle {
             if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
@@ -130,7 +130,7 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
             if cycle.current_cycle_start_date == chrono::Local::now().date_naive() {
                 let pre_start = match cycle.cycle_type {
                     CycleType::DAY(each, _) =>  cycle.current_cycle_start_date - chrono::Duration::days(each),
-                    CycleType::MONTH(each, _) => add_months(cycle.current_cycle_start_date, -each as i32),
+                    CycleType::MONTH(each, _) => cycle.current_cycle_start_date.checked_sub_months(Months::new(each as u32)).unwrap(),
                     _ => return Err(anyhow!("cycle_type 不会出现此类型")),
                 };
                 let pre_end = cycle.current_cycle_start_date - chrono::Duration::days(1);
@@ -140,7 +140,7 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
                     CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
                     CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
                 };
-                text = format!("{}\n计入流量: {}\n周期已用量:\n{}/{}\n上一周期已结束", text, traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit));
+                text = format!("{}\n计入周期流量: {}\n周期已用量: {}/{}\n上一周期已结束", text, traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit));
             } else {
                 let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(cycle.current_cycle_start_date, cycle.current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
                 let cycle_traffic_usage = match cycle.statistic_method {
@@ -148,7 +148,7 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
                     CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
                     CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
                 };
-                text = format!("{}\n计入流量: {}\n周期已用量:\n{}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", text, traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1);
+                text = format!("{}\n计入周期流量: {}\n周期已用量: {}/{}\n当前周期: {} ~ {}\n距下次重置: {}天", text, traffic_show(yesterday_traffic_usage), traffic_show(cycle_traffic_usage + yesterday_traffic_usage), traffic_show(cycle.traffic_limit), cycle.current_cycle_start_date.to_string(), cycle.current_cycle_end_date.to_string(), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1);
             }
         }
         let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
@@ -221,7 +221,7 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         _ => return Err(anyhow!("config[liftcycle][cycle] 配置填写错误，没有这样的类型")),
     };
     let now = chrono::Local::now().date_naive();
-    let (current_cycle_start_date, current_cycle_end_date);
+    let (mut current_cycle_start_date, mut current_cycle_end_date);
     if let CycleType::ONCE(start, end) = cycle_type {
         current_cycle_start_date = start;
         current_cycle_end_date = end;
@@ -238,12 +238,18 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         loop {
             let end = match cycle_type {
                 CycleType::DAY(each, traffic_reset_date) =>  traffic_reset_date + chrono::Duration::days(each * add_or_sub),
-                CycleType::MONTH(each, traffic_reset_date) => add_months(traffic_reset_date, (each * add_or_sub) as i32),
+                CycleType::MONTH(each, traffic_reset_date) => {
+                    if add_or_sub == 1 {
+                        traffic_reset_date.checked_add_months(Months::new(each as u32)).unwrap()
+                    } else {
+                        traffic_reset_date.checked_sub_months(Months::new(each as u32)).unwrap()
+                    }
+                },
                 _ => return Err(anyhow!("cycle_type 不会出现此类型")),
-            } - chrono::Duration::days(1);
-            if now >= traffic_reset_date && now <= end {
-                current_cycle_start_date = std::cmp::min(traffic_reset_date, end);
-                current_cycle_end_date = std::cmp::max(traffic_reset_date, end);
+            } - chrono::Duration::days(add_or_sub);
+            current_cycle_start_date = std::cmp::min(traffic_reset_date, end);
+            current_cycle_end_date = std::cmp::max(traffic_reset_date, end);
+            if now >= current_cycle_start_date && now <= current_cycle_end_date {
                 break;
             }
             traffic_reset_date = end;
@@ -277,35 +283,15 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage + today_uplink_traffic_usage,
         CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage + today_uplink_traffic_usage + today_downlink_traffic_usage,
     };
-    *app_state.cycle.write().await = Some(CycleAppState {
+    let cycle = CycleAppState {
         cycle_type,
         current_cycle_start_date,
         current_cycle_end_date,
         traffic_usage,
         traffic_limit,
         statistic_method,
-    });
+    };
+    tracing::info!("流量周期: {:#?}", &cycle);
+    *app_state.cycle.write().await = Some(cycle);
     anyhow::Ok(())
-}
-
-fn add_months(date: NaiveDate, months: i32) -> NaiveDate {
-    let mut year = date.year();
-    let month = date.month() as i32;
-    let day = date.day();
-
-    let mut new_month = month + months;
-    if new_month > 12 {
-        year += new_month / 12;
-        new_month %= 12;
-    } else if new_month < 1 {
-        year += (new_month - 1) / 12;
-        new_month = (new_month - 1) % 12 + 12;
-    }
-
-    let new_month = new_month as u32;
-    let last_day_of_new_month = NaiveDate::from_ymd_opt(year, new_month, 1).unwrap()
-        .with_day0(0).unwrap().day();
-    let new_day = min(day, last_day_of_new_month);
-
-    NaiveDate::from_ymd_opt(year, new_month, new_day).unwrap()
 }

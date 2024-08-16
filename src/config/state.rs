@@ -3,21 +3,21 @@ use std::sync::Arc;
 use sqlx::{Pool, Sqlite};
 use tokio::sync::RwLock;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CycleStatisticMethod {
     SumInOut,
     MaxInOut,
     OnlyOut,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CycleType {
     DAY(i64, chrono::NaiveDate),
     MONTH(i64, chrono::NaiveDate),
     ONCE(chrono::NaiveDate, chrono::NaiveDate),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CycleAppState {
     pub cycle_type: CycleType,
     pub current_cycle_start_date: chrono::NaiveDate,
