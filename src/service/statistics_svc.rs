@@ -1,7 +1,5 @@
-use std::cmp::min;
-
 use anyhow::anyhow;
-use chrono::{Datelike, Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde_json::json;
 
 use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::http_util};
@@ -15,15 +13,15 @@ pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
     }
     let pre_data = pre_data.unwrap();
     let pre_end_time = pre_data.end_time.unwrap();
-    if now - pre_end_time < chrono::Duration::seconds(15) {
+    if now - pre_end_time < chrono::Duration::seconds(15) && now.minute() == pre_end_time.minute() {
         return anyhow::Ok(());
     }
     collect_second_data(app_state).await?;
-    if now.date() == pre_end_time.date() && now.hour() == pre_end_time.hour() {
+    if now.date() == pre_end_time.date() && now.hour() == pre_end_time.hour() && (pre_end_time.minute() >= 1 || now.minute() < 1) {
         return anyhow::Ok(());
     }
     collect_hour_data(app_state, pre_end_time).await?;
-    if now.date() == pre_end_time.date() {
+    if now.date() == pre_end_time.date() && (pre_end_time.hour() > 0 || (pre_end_time.minute() >= 2 || now.minute() < 2)) {
         return anyhow::Ok(());
     }
     collect_day_data(app_state, pre_end_time.date()).await?;
