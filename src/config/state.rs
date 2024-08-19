@@ -24,6 +24,9 @@ pub struct CycleAppState {
     pub current_cycle_end_date: chrono::NaiveDate,
     pub traffic_usage: i64,
     pub traffic_limit: i64,
+    pub notify_half: bool,
+    pub notify_80: bool,
+    pub notify_90: bool,
     pub statistic_method: CycleStatisticMethod,
 }
 

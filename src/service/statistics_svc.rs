@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use chrono::{Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde_json::json;
 
-use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::http_util};
+use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::{command_util, http_util, tg_util}};
 
 pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
     generate_cycle(app_state).await?;
@@ -64,10 +64,7 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     };
     monitor_second_mapper::create(monitor_second, &app_state.db_pool).await?;
 
-    let exceeds_limit = verify_exceeds_limit(app_state, (uplink_traffic_usage, downlink_traffic_usage)).await?;
-    if exceeds_limit {
-        tracing::warn!("流量超限");
-    }
+    verify_exceeds_limit(app_state, (uplink_traffic_usage, downlink_traffic_usage)).await?;
 
     anyhow::Ok(())
 }
@@ -151,8 +148,11 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
         }
         let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
         let body = json!({"chat_id": tg.chat_id, "text": text, "parse_mode": "Markdown", "message_thread_id": tg.topic_id}).to_string();
-        tracing::debug!("forward 消息 body: {}", &body);
-        http_util::post(&url, body).await?;
+        tracing::debug!("每日报告消息 body: {}", &body);
+        match http_util::post(&url, body).await {
+            Ok(_) => tracing::info!("tg 每日报告消息发送成功"),
+            Err(e) => tracing::error!("tg 消息发送失败: {}", e),
+        }
     }
 
     anyhow::Ok(())
@@ -177,15 +177,15 @@ fn traffic_show(bytes: i64) -> String {
     }
 }
 
-async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<bool> {
+async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<()> {
     let config = &app_state.config;
     if config.liftcycle.is_none() {
-        return anyhow::Ok(false);
+        return anyhow::Ok(());
     }
     let mut cycle = app_state.cycle.read().await.clone().unwrap();
     if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
         if let CycleType::ONCE(_, _) = cycle.cycle_type {
-            return anyhow::Ok(false);
+            return anyhow::Ok(());
         }
         generate_cycle(app_state).await?;
         cycle = app_state.cycle.read().await.clone().unwrap();
@@ -198,12 +198,50 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     let traffic_limit = cycle.traffic_limit;
     let traffic_usage = cycle.traffic_usage + today_traffic_usage;
     tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
+    if traffic_usage >= traffic_limit {
+        tracing::warn!("{} 流量超限", config.network_name);
+        let text = format!("{} 流量超限 {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+        tg_util::send_msg(config, text).await;
+    } else if traffic_usage as f64 >= traffic_limit as f64 * 0.9 {
+        if !cycle.notify_90 {
+            tracing::warn!("{} 流量使用超90%", config.network_name);
+            cycle.notify_90 = true;
+            let text = format!("{} 流量使用超90% {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            tg_util::send_msg(config, text).await;
+        }
+    } else if traffic_usage as f64 >= traffic_limit as f64 * 0.8 {
+        if !cycle.notify_80 {
+            tracing::warn!("{} 流量使用超80%", config.network_name);
+            cycle.notify_80 = true;
+            let text = format!("{} 流量使用超80% {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            tg_util::send_msg(config, text).await;
+        }
+    } else if traffic_usage as f64 >= traffic_limit as f64 * 0.5 {
+        if !cycle.notify_half {
+            tracing::warn!("{} 流量使用超半", config.network_name);
+            cycle.notify_half = true;
+            let text = format!("{} 流量使用超半 {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            tg_util::send_msg(config, text).await;
+        }
+    }
     cycle.traffic_usage = traffic_usage;
     *app_state.cycle.write().await = Some(cycle);
     if traffic_usage >= traffic_limit {
-        return anyhow::Ok(true);
+        if let Some(exec) = &config.liftcycle.as_ref().unwrap().exec {
+            tracing::info!("流量使用超出限制，执行命令: {}", exec);
+            match command_util::execute_to_output(".".to_string(), vec![exec.clone()]).await {
+                Ok(res) => {
+                    if res.status.success() {
+                        tracing::info!("执行命令成功，执行结果: {}", String::from_utf8_lossy(&res.stdout))
+                    } else {
+                        tracing::info!("执行命令失败，执行结果: {}", String::from_utf8_lossy(&res.stderr))
+                    }
+                },
+                Err(e) => tracing::info!("命令提交失败: {:?}", e),
+            }
+        }
     }
-    return anyhow::Ok(false);
+    return anyhow::Ok(());
 }
 
 async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
@@ -287,6 +325,9 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         current_cycle_end_date,
         traffic_usage,
         traffic_limit,
+        notify_half: false,
+        notify_80: false,
+        notify_90: false,
         statistic_method,
     };
     tracing::info!("流量周期: {:#?}", &cycle);
