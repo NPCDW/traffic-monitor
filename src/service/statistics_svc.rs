@@ -273,8 +273,8 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         let add_or_sub = if now >= traffic_reset_date { 1 } else { -1 };
         loop {
             let end = match cycle_type {
-                CycleType::DAY(each, traffic_reset_date) =>  traffic_reset_date + chrono::Duration::days(each * add_or_sub),
-                CycleType::MONTH(each, traffic_reset_date) => {
+                CycleType::DAY(each, _) =>  traffic_reset_date + chrono::Duration::days(each * add_or_sub),
+                CycleType::MONTH(each, _) => {
                     if add_or_sub == 1 {
                         traffic_reset_date.checked_add_months(Months::new(each as u32)).unwrap()
                     } else {
