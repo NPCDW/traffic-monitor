@@ -1,8 +1,17 @@
+use std::str::FromStr;
+
 use anyhow::anyhow;
 use chrono::{Duration, Months, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
+use rust_decimal_macros::dec;
 use serde_json::json;
 
 use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::{command_util, http_util, tg_util}};
+
+const KB: i64 = 1024;
+const MB: i64 = KB * 1024;
+const GB: i64 = MB * 1024;
+const TB: i64 = GB * 1024;
 
 pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
     generate_cycle(app_state).await?;
@@ -158,22 +167,18 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
     anyhow::Ok(())
 }
 
-fn traffic_show(bytes: i64) -> String {
-    const KB: i64 = 1024;
-    const MB: i64 = KB * 1024;
-    const GB: i64 = MB * 1024;
-    const TB: i64 = GB * 1024;
-
-    if bytes < KB {
+fn traffic_show<T: Into<Decimal>>(bytes: T) -> String {
+    let bytes = bytes.into();
+    if bytes < Decimal::from_i64(KB).unwrap() {
         return format!("{} B", bytes);
-    } else if bytes < MB {
-        return format!("{:.2} KB", bytes as f64 / KB as f64);
-    } else if bytes < GB {
-        return format!("{:.2} MB", bytes as f64 / MB as f64);
-    } else if bytes < TB {
-        return format!("{:.2} GB", bytes as f64 / GB as f64);
+    } else if bytes < Decimal::from_i64(MB).unwrap() {
+        return format!("{:.2} KB", bytes / Decimal::from_i64(KB).unwrap());
+    } else if bytes < Decimal::from_i64(GB).unwrap() {
+        return format!("{:.2} MB", bytes / Decimal::from_i64(MB).unwrap());
+    } else if bytes < Decimal::from_i64(TB).unwrap() {
+        return format!("{:.2} GB", bytes / Decimal::from_i64(GB).unwrap());
     } else {
-        return format!("{:.2} TB", bytes as f64 / TB as f64);
+        return format!("{:.2} TB", bytes / Decimal::from_i64(TB).unwrap());
     }
 }
 
@@ -192,36 +197,36 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     }
     cycle.uplink_traffic_usage = cycle.uplink_traffic_usage + uplink_traffic_usage;
     cycle.downlink_traffic_usage = cycle.downlink_traffic_usage + downlink_traffic_usage;
-    let traffic_limit = cycle.traffic_limit;
-    let traffic_usage = match cycle.statistic_method {
+    let traffic_limit = Decimal::from_i64(cycle.traffic_limit).unwrap();
+    let traffic_usage = Decimal::from_i64(match cycle.statistic_method {
         CycleStatisticMethod::MaxInOut => std::cmp::max(cycle.uplink_traffic_usage, cycle.downlink_traffic_usage),
         CycleStatisticMethod::OnlyOut => cycle.uplink_traffic_usage,
         CycleStatisticMethod::SumInOut => cycle.uplink_traffic_usage + cycle.downlink_traffic_usage,
-    };
+    }).unwrap();
     tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
     if traffic_usage >= traffic_limit {
-        tracing::warn!("{} 流量超限", config.network_name);
-        let text = format!("{} 流量超限 {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+        tracing::warn!("{} 流量超限", config.vps_name);
+        let text = format!("{} 流量超限 {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
         tg_util::send_msg(config, text).await;
-    } else if traffic_usage as f64 >= traffic_limit as f64 * 0.9 {
+    } else if traffic_usage >= traffic_limit * dec!(0.9) {
         if !cycle.notify_90 {
-            tracing::warn!("{} 流量使用超90%", config.network_name);
+            tracing::warn!("{} 流量使用超90%", config.vps_name);
             cycle.notify_90 = true;
-            let text = format!("{} 流量使用超90% {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!("{} 流量使用超90% {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
             tg_util::send_msg(config, text).await;
         }
-    } else if traffic_usage as f64 >= traffic_limit as f64 * 0.8 {
+    } else if traffic_usage >= traffic_limit * dec!(0.8) {
         if !cycle.notify_80 {
-            tracing::warn!("{} 流量使用超80%", config.network_name);
+            tracing::warn!("{} 流量使用超80%", config.vps_name);
             cycle.notify_80 = true;
-            let text = format!("{} 流量使用超80% {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!("{} 流量使用超80% {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
             tg_util::send_msg(config, text).await;
         }
-    } else if traffic_usage as f64 >= traffic_limit as f64 * 0.5 {
+    } else if traffic_usage >= traffic_limit * dec!(0.5) {
         if !cycle.notify_half {
-            tracing::warn!("{} 流量使用超半", config.network_name);
+            tracing::warn!("{} 流量使用超半", config.vps_name);
             cycle.notify_half = true;
-            let text = format!("{} 流量使用超半 {}/{}", config.network_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!("{} 流量使用超半 {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
             tg_util::send_msg(config, text).await;
         }
     }
@@ -299,17 +304,15 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     };
     let traffic_limit = &liftcycle.traffic_limit.replace(" ", "").replace(",", "").replace("_", "");
     let traffic_limit = if let Some(traffic_limit) = traffic_limit.strip_suffix("MB") {
-        let limit = traffic_limit.parse::<f64>()?;
-        limit * (1024 * 1024) as f64
+        Decimal::from_str(traffic_limit).unwrap() * Decimal::from_i64(MB).unwrap()
     } else if let Some(traffic_limit) = traffic_limit.strip_suffix("GB") {
-        let limit = traffic_limit.parse::<f64>()?;
-        limit * (1024 * 1024 * 1024) as f64
+        Decimal::from_str(traffic_limit).unwrap() * Decimal::from_i64(GB).unwrap()
     } else if let Some(traffic_limit) = traffic_limit.strip_suffix("TB") {
-        let limit = traffic_limit.parse::<f64>()?;
-        limit * (1024 * 1024 * 1024 * 1024) as f64
+        Decimal::from_str(traffic_limit).unwrap() * Decimal::from_i64(TB).unwrap()
     } else {
         return Err(anyhow!("config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"));
-    } as i64;
+    };
+    let traffic_limit = traffic_limit.to_string().parse::<i64>()?;
     let now = chrono::Local::now().date_naive();
     let day_start_time = now.and_hms_opt(0, 0, 0).unwrap();
     let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(current_cycle_start_date, current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
