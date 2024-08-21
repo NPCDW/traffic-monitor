@@ -190,12 +190,14 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
         generate_cycle(app_state).await?;
         cycle = app_state.cycle.read().await.clone().unwrap();
     }
-    let traffic_usage = match cycle.statistic_method {
-        CycleStatisticMethod::MaxInOut => std::cmp::max(cycle.uplink_traffic_usage + uplink_traffic_usage, cycle.downlink_traffic_usage + downlink_traffic_usage),
-        CycleStatisticMethod::OnlyOut => cycle.uplink_traffic_usage + uplink_traffic_usage,
-        CycleStatisticMethod::SumInOut => cycle.uplink_traffic_usage + cycle.downlink_traffic_usage + uplink_traffic_usage + downlink_traffic_usage,
-    };
+    cycle.uplink_traffic_usage = cycle.uplink_traffic_usage + uplink_traffic_usage;
+    cycle.downlink_traffic_usage = cycle.downlink_traffic_usage + downlink_traffic_usage;
     let traffic_limit = cycle.traffic_limit;
+    let traffic_usage = match cycle.statistic_method {
+        CycleStatisticMethod::MaxInOut => std::cmp::max(cycle.uplink_traffic_usage, cycle.downlink_traffic_usage),
+        CycleStatisticMethod::OnlyOut => cycle.uplink_traffic_usage,
+        CycleStatisticMethod::SumInOut => cycle.uplink_traffic_usage + cycle.downlink_traffic_usage,
+    };
     tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
     if traffic_usage >= traffic_limit {
         tracing::warn!("{} 流量超限", config.network_name);
