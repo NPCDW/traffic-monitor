@@ -190,13 +190,12 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
         generate_cycle(app_state).await?;
         cycle = app_state.cycle.read().await.clone().unwrap();
     }
-    let today_traffic_usage = match cycle.statistic_method {
-        CycleStatisticMethod::MaxInOut => std::cmp::max(uplink_traffic_usage, downlink_traffic_usage),
-        CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
-        CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
+    let traffic_usage = match cycle.statistic_method {
+        CycleStatisticMethod::MaxInOut => std::cmp::max(cycle.uplink_traffic_usage + uplink_traffic_usage, cycle.downlink_traffic_usage + downlink_traffic_usage),
+        CycleStatisticMethod::OnlyOut => cycle.uplink_traffic_usage + uplink_traffic_usage,
+        CycleStatisticMethod::SumInOut => cycle.uplink_traffic_usage + cycle.downlink_traffic_usage + uplink_traffic_usage + downlink_traffic_usage,
     };
     let traffic_limit = cycle.traffic_limit;
-    let traffic_usage = cycle.traffic_usage + today_traffic_usage;
     tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
     if traffic_usage >= traffic_limit {
         tracing::warn!("{} 流量超限", config.network_name);
@@ -224,7 +223,6 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
             tg_util::send_msg(config, text).await;
         }
     }
-    cycle.traffic_usage = traffic_usage;
     *app_state.cycle.write().await = Some(cycle);
     if traffic_usage >= traffic_limit {
         if let Some(exec) = &config.liftcycle.as_ref().unwrap().exec {
@@ -299,31 +297,29 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     };
     let traffic_limit = &liftcycle.traffic_limit.replace(" ", "").replace(",", "").replace("_", "");
     let traffic_limit = if let Some(traffic_limit) = traffic_limit.strip_suffix("MB") {
-        let limit = traffic_limit.parse::<i64>()?;
-        limit * 1024 * 1024
+        let limit = traffic_limit.parse::<f64>()?;
+        limit * (1024 * 1024) as f64
     } else if let Some(traffic_limit) = traffic_limit.strip_suffix("GB") {
-        let limit = traffic_limit.parse::<i64>()?;
-        limit * 1024 * 1024 * 1024
+        let limit = traffic_limit.parse::<f64>()?;
+        limit * (1024 * 1024 * 1024) as f64
     } else if let Some(traffic_limit) = traffic_limit.strip_suffix("TB") {
-        let limit = traffic_limit.parse::<i64>()?;
-        limit * 1024 * 1024 * 1024 * 1024
+        let limit = traffic_limit.parse::<f64>()?;
+        limit * (1024 * 1024 * 1024 * 1024) as f64
     } else {
         return Err(anyhow!("config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"));
-    };
+    } as i64;
     let now = chrono::Local::now().date_naive();
     let day_start_time = now.and_hms_opt(0, 0, 0).unwrap();
     let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(current_cycle_start_date, current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
     let (today_uplink_traffic_usage, today_downlink_traffic_usage) = monitor_second_mapper::get_timerange_data(day_start_time, day_start_time + Duration::days(1), &app_state.db_pool).await?.unwrap_or((0, 0));
-    let traffic_usage = match statistic_method {
-        CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) + std::cmp::max(today_uplink_traffic_usage, today_downlink_traffic_usage),
-        CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage + today_uplink_traffic_usage,
-        CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage + today_uplink_traffic_usage + today_downlink_traffic_usage,
-    };
+    let uplink_traffic_usage = cycle_day_uplink_traffic_usage + today_uplink_traffic_usage;
+    let downlink_traffic_usage = cycle_day_downlink_traffic_usage + today_downlink_traffic_usage;
     let cycle = CycleAppState {
         cycle_type,
         current_cycle_start_date,
         current_cycle_end_date,
-        traffic_usage,
+        uplink_traffic_usage,
+        downlink_traffic_usage,
         traffic_limit,
         notify_half: false,
         notify_80: false,
