@@ -205,9 +205,12 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     }).unwrap();
     tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
     if traffic_usage >= traffic_limit {
-        tracing::warn!("{} 流量超限", config.vps_name);
-        let text = format!("{} 流量超限 {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
-        tg_util::send_msg(config, text).await;
+        if !cycle.notify_exceeds {
+            tracing::warn!("{} 流量超限", config.vps_name);
+            cycle.notify_exceeds = true;
+            let text = format!("{} 流量超限 {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            tg_util::send_msg(config, text).await;
+        }
     } else if traffic_usage >= traffic_limit * dec!(0.9) {
         if !cycle.notify_90 {
             tracing::warn!("{} 流量使用超90%", config.vps_name);
@@ -326,6 +329,7 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         uplink_traffic_usage,
         downlink_traffic_usage,
         traffic_limit,
+        notify_exceeds: false,
         notify_half: false,
         notify_80: false,
         notify_90: false,
