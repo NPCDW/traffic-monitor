@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 // use service::systemstat_svc;
 
 mod config;
+mod controller;
 mod mapper;
 mod service;
 mod util;
@@ -31,6 +32,16 @@ async fn main() -> anyhow::Result<()> {
     service::scheduler_svc::init(&app_state).await?;
 
     // systemstat_svc::test();
+
+    let app_state_clone = app_state.clone();
+    if let Some(web) = app_state.config.web {
+        let router = config::route::init(app_state_clone).await;
+        let listener = tokio::net::TcpListener::bind(web.listener).await?;
+        tracing::info!("listening on {:?}", listener);
+        axum::serve(listener, router)
+            .await
+            .unwrap_or_else(|e| panic!("start service fail {:#?}", e));
+    }
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

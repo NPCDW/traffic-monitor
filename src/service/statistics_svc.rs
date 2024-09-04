@@ -184,7 +184,7 @@ fn traffic_show<T: Into<Decimal>>(bytes: T) -> String {
 
 async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<()> {
     let config = &app_state.config;
-    if config.liftcycle.is_none() {
+    if config.traffic_cycle.is_none() {
         return anyhow::Ok(());
     }
     let mut cycle = app_state.cycle.read().await.clone().unwrap();
@@ -235,7 +235,7 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     }
     *app_state.cycle.write().await = Some(cycle);
     if traffic_usage >= traffic_limit {
-        if let Some(exec) = &config.liftcycle.as_ref().unwrap().exec {
+        if let Some(exec) = &config.traffic_cycle.as_ref().unwrap().exec {
             tracing::info!("流量使用超出限制，执行命令: {}", exec);
             match command_util::execute_to_output(".".to_string(), vec![exec.clone()]).await {
                 Ok(res) => {
@@ -254,11 +254,11 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
 
 async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     let config = &app_state.config;
-    if config.liftcycle.is_none() {
+    if config.traffic_cycle.is_none() {
         return Err(anyhow!("config[liftcycle] 没有配置，生成流量周期失败"));
     }
-    let liftcycle = config.liftcycle.as_ref().unwrap();
-    let cycle_type = match liftcycle.cycle.as_str() {
+    let liftcycle = config.traffic_cycle.as_ref().unwrap();
+    let cycle_type = match liftcycle.cycle_type.as_str() {
         "day" => CycleType::DAY(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
         "month" => CycleType::MONTH(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
         "once" => CycleType::ONCE(chrono::NaiveDate::parse_from_str(liftcycle.start_date.as_ref().unwrap(), "%Y-%m-%d")?, chrono::NaiveDate::parse_from_str(liftcycle.end_date.as_ref().unwrap(), "%Y-%m-%d")?),

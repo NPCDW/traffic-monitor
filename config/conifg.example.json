@@ -1,23 +1,28 @@
 {
-    "network_name": "网卡名称，例如: eth0 ens4",
-    "log_level": "info",
-    "vps_name": "自定义名称，用于发送tg通知",
-    "tg": {
-        "bot_token": "",
-        "chat_id": "",
-        "topic_id": 0
+    "network_name": "eth0", // 必填，网卡名称，例如: eth0 ens4 ens5
+    "vps_name": "aws-lightsail-sg01", // 必填，自定义机器名称，用于标识机器，发送tg通知
+    "log_level": "info", // 可选，日志信息: trace debug info warn error
+    "web": { // 可选，显示 web 统计信息
+        "listener": "0.0.0.0:1453", // 可选，监听地址和端口
+        "ui_path": "/ui", // 可选，UI资源路径
+        "token": "" // 必填，授权密钥，示例: d5e1da14-4ed2-4355-b69e-5a8fd07b1a4e
     },
-    "liftcycle": {
-        "cycle": "周期，当前支持 天: day 月: month 一次不循环(月抛、季抛): once",
+    "tg": { // 可选，telegram 每日通知，流量过半通知，流量过80%通知，流量过90%通知，流量超限通知
+        "bot_token": "123456789:QEWEDesfdewqfewfqeqWEQEWQ", // 必填，bot token
+        "chat_id": "-1001234567890", // 必填，聊天ID
+        "topic_id": 0 // 可选，主题ID
+    },
+    "traffic_cycle": { // 可选，流量周期
+        "cycle_type": "month", // 必填，周期类型，当前支持 天: day 月: month 一次不循环(月抛、季抛): once
 
-        "each": "周期不为 once 时，使用此值，每多少天或每几个月",
-        "traffic_reset_date": "周期不为 once 时，使用此值，流量重置日期，任意一次重置日即可，示例: 2024-08-05",
+        "each": "1", // 周期不为 once 时，必填此值，每多少天或每几个月为一个周期
+        "traffic_reset_date": "2024-08-05", // 周期不为 once 时，必填此值，流量重置日期，任意一次重置日即可
 
-        "start_date": "当周期为 once 时，使用此值，开始日期，示例: 2024-08-05",
-        "end_date": "当周期为 once 时，使用此值，到期日期，示例: 2024-08-05",
+        "start_date": "2024-08-05", // 当周期为 once 时，必填此值，开始日期
+        "end_date": "2024-08-05", // 当周期为 once 时，必填此值，到期日期
         
-        "traffic_limit": "流量限制，示例: 200G",
-        "statistic_method": "统计方法，当前支持 双向计算: sum(in,out) 只记出方向: out 入出取大: max(in,out)",
-        "exec": "（可选）流量到达限制后执行的命令，为空时流量到达限制不进行任何操作，示例: 立即关机 shutdown -h now (如果在 docker 中，需执行: nsenter -a -t 1 sh -c 'shutdown -h now')"
+        "traffic_limit": "200GB", // 必填，流量限制 1.5TB  200GB  600MB
+        "statistic_method": "sum(in,out)", // 必填，统计方法，当前支持 双向计算: sum(in,out) 只记出方向: out 入出取大: max(in,out)
+        "exec": "nsenter -a -t 1 sh -c 'shutdown -h now'" // 可选，流量到达限制后执行的命令，不填此值流量到达限制不进行任何操作，示例: 立即关机 shutdown -h now (如果在 docker 中，需执行: nsenter -a -t 1 sh -c 'shutdown -h now')
     }
 }

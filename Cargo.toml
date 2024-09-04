@@ -8,10 +8,12 @@ edition = "2021"
 [dependencies]
 systemstat = "0.2.3"
 tokio = { version = "1.38.0", features = ["full"] }
+axum = "0.7.5"
+tower-http = { version = "0.5.2", features = ["fs", "auth", "catch-panic"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_with = "3.8"
+serde-inline-default = "0.2.0"
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local-time"] }
