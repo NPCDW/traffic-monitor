@@ -9,7 +9,7 @@ use axum::{
 use tower_http::validate_request::ValidateRequestHeaderLayer;
 use tower_http::services::ServeDir;
 use tower_http::catch_panic::CatchPanicLayer;
-use crate::controller::app_ctl;
+use crate::controller::{app_ctl, traffic_ctl};
 use crate::config::state::AppState;
 use crate::util::response_util::ApiResponse;
 
@@ -18,8 +18,14 @@ pub async fn init(app_state: AppState) -> Router {
         .route("/version", get(app_ctl::version))
         .route("/state", get(app_ctl::state));
 
+    let traffic = Router::new()
+        .route("/day", get(traffic_ctl::list_monitor_day))
+        .route("/hour", get(traffic_ctl::list_monitor_hour))
+        .route("/second", get(traffic_ctl::list_monitor_second));
+
     let api = Router::new()
-        .nest("/app", app);
+        .nest("/app", app)
+        .nest("/traffic", traffic);
 
     let web = app_state.config.web.clone().unwrap();
 

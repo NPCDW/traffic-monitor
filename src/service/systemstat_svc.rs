@@ -7,7 +7,7 @@ pub fn traffic(network_name: &str) -> anyhow::Result<NetworkStats> {
     let sys = System::new();
     
     let network_stats = sys.network_stats(&network_name)?;
-    tracing::debug!("网卡接口统计数据：{:?}", &network_stats);
+    tracing::debug!("网卡接口统计数据: {:?}", &network_stats);
     anyhow::Ok(network_stats)
 }
 

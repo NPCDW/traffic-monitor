@@ -13,7 +13,7 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
         Box::pin(async move {
             let res = statistics_svc::collect_second_data(&app_state).await;
             if res.is_err() {
-                tracing::error!("收集秒级监控数据出错：{:?}", &res);
+                tracing::error!("收集秒级监控数据出错: {:?}", &res);
             }
         })
     })?).await?;
@@ -25,7 +25,7 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
             let statistic_hour_time = chrono::Local::now() - chrono::Duration::hours(1);
             let res = statistics_svc::collect_hour_data(&app_state, statistic_hour_time.naive_local()).await;
             if res.is_err() {
-                tracing::error!("收集小时监控数据出错：{:?}", &res);
+                tracing::error!("收集小时监控数据出错: {:?}", &res);
             }
         })
     })?).await?;
@@ -37,7 +37,7 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
             let statistic_date = chrono::Local::now() - chrono::Duration::days(1);
             let res = statistics_svc::collect_day_data(&app_state, statistic_date.date_naive()).await;
             if res.is_err() {
-                tracing::error!("收集天监控数据出错：{:?}", &res);
+                tracing::error!("收集天监控数据出错: {:?}", &res);
             }
         })
     })?).await?;

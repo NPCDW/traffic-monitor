@@ -6,7 +6,16 @@ use rust_decimal::{prelude::FromPrimitive, Decimal};
 use rust_decimal_macros::dec;
 use serde_json::json;
 
-use crate::{config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType}, mapper::{monitor_day_mapper::{self, MonitorDay}, monitor_hour_mapper::{self, MonitorHour}, monitor_second_mapper::{self, MonitorSecond}}, service::systemstat_svc, util::{command_util, http_util, tg_util}};
+use crate::{
+    config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType},
+    mapper::{
+        monitor_day_mapper::{self, MonitorDay},
+        monitor_hour_mapper::{self, MonitorHour},
+        monitor_second_mapper::{self, MonitorSecond},
+    },
+    service::systemstat_svc,
+    util::{command_util, http_util, tg_util},
+};
 
 const KB: i64 = 1024;
 const MB: i64 = KB * 1024;
@@ -26,11 +35,16 @@ pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
         return anyhow::Ok(());
     }
     collect_second_data(app_state).await?;
-    if now.date() == pre_end_time.date() && now.hour() == pre_end_time.hour() && (pre_end_time.minute() >= 1 || now.minute() < 1) {
+    if now.date() == pre_end_time.date()
+        && now.hour() == pre_end_time.hour()
+        && (pre_end_time.minute() >= 1 || now.minute() < 1)
+    {
         return anyhow::Ok(());
     }
     collect_hour_data(app_state, pre_end_time).await?;
-    if now.date() == pre_end_time.date() && (pre_end_time.hour() > 0 || (pre_end_time.minute() >= 2 || now.minute() < 2)) {
+    if now.date() == pre_end_time.date()
+        && (pre_end_time.hour() > 0 || (pre_end_time.minute() >= 2 || now.minute() < 2))
+    {
         return anyhow::Ok(());
     }
     collect_day_data(app_state, pre_end_time.date()).await?;
@@ -39,7 +53,8 @@ pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
 
 pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     let traffic = systemstat_svc::traffic(&app_state.config.network_name)?;
-    let (uplink_traffic_readings, downlink_traffic_readings) = (traffic.tx_bytes.0 as i64, traffic.rx_bytes.0 as i64);
+    let (uplink_traffic_readings, downlink_traffic_readings) =
+        (traffic.tx_bytes.0 as i64, traffic.rx_bytes.0 as i64);
 
     let pre_data = monitor_second_mapper::get_pre_data(&app_state.db_pool).await?;
 
@@ -50,15 +65,29 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
         time_interval = (end_time - start_time).num_seconds();
         let pre_uplink_traffic_readings = pre_data.uplink_traffic_readings.unwrap();
         let pre_downlink_traffic_readings = pre_data.downlink_traffic_readings.unwrap();
-        uplink_traffic_usage = if pre_uplink_traffic_readings > uplink_traffic_readings { uplink_traffic_readings } else { uplink_traffic_readings - pre_uplink_traffic_readings };
-        downlink_traffic_usage = if pre_downlink_traffic_readings > downlink_traffic_readings { downlink_traffic_readings } else { downlink_traffic_readings - pre_downlink_traffic_readings };
+        uplink_traffic_usage = if pre_uplink_traffic_readings > uplink_traffic_readings {
+            uplink_traffic_readings
+        } else {
+            uplink_traffic_readings - pre_uplink_traffic_readings
+        };
+        downlink_traffic_usage = if pre_downlink_traffic_readings > downlink_traffic_readings {
+            downlink_traffic_readings
+        } else {
+            downlink_traffic_readings - pre_downlink_traffic_readings
+        };
     } else {
         start_time = end_time;
         uplink_traffic_usage = 0;
         downlink_traffic_usage = 0;
         time_interval = 0;
     }
-    tracing::debug!("秒统计: {} ~ {} 上行: {} 下行: {}", &start_time.to_string(), end_time.to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+    tracing::debug!(
+        "秒统计: {} ~ {} 上行: {} 下行: {}",
+        &start_time.to_string(),
+        end_time.to_string(),
+        traffic_show(uplink_traffic_usage),
+        traffic_show(downlink_traffic_usage)
+    );
     let monitor_second = MonitorSecond {
         id: None,
         create_time: None,
@@ -78,16 +107,32 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     anyhow::Ok(())
 }
 
-pub async fn collect_hour_data(app_state: &AppState, statistic_hour_time: NaiveDateTime) -> anyhow::Result<()> {
-    let start_time = statistic_hour_time.with_minute(0).unwrap().with_second(0).unwrap().with_nanosecond(0).unwrap();
+pub async fn collect_hour_data(
+    app_state: &AppState,
+    statistic_hour_time: NaiveDateTime,
+) -> anyhow::Result<()> {
+    let start_time = statistic_hour_time
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap()
+        .with_nanosecond(0)
+        .unwrap();
     let end_time = start_time + chrono::Duration::hours(1);
     let day = start_time.with_hour(0).unwrap();
-    let res = monitor_second_mapper::get_timerange_data(start_time, end_time, &app_state.db_pool).await?;
+    let res =
+        monitor_second_mapper::sum_timerange_data(start_time, end_time, &app_state.db_pool).await?;
     if res.is_none() {
         return anyhow::Ok(());
     }
     let (uplink_traffic_usage, downlink_traffic_usage) = res.unwrap();
-    tracing::info!("小时统计: {} {} 上行: {} 下行: {}", &day.date().to_string(), start_time.hour(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+    tracing::info!(
+        "小时统计: {} {} 上行: {} 下行: {}",
+        &day.date().to_string(),
+        start_time.hour(),
+        traffic_show(uplink_traffic_usage),
+        traffic_show(downlink_traffic_usage)
+    );
     let monitor_hour = MonitorHour {
         id: None,
         create_time: None,
@@ -100,13 +145,21 @@ pub async fn collect_hour_data(app_state: &AppState, statistic_hour_time: NaiveD
     anyhow::Ok(())
 }
 
-pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -> anyhow::Result<()> {
-    let res = monitor_hour_mapper::get_day_data(statistic_date, &app_state.db_pool).await?;
+pub async fn collect_day_data(
+    app_state: &AppState,
+    statistic_date: NaiveDate,
+) -> anyhow::Result<()> {
+    let res = monitor_hour_mapper::sum_day_data(statistic_date, &app_state.db_pool).await?;
     if res.is_none() {
         return anyhow::Ok(());
     }
     let (uplink_traffic_usage, downlink_traffic_usage) = res.unwrap();
-    tracing::info!("天统计: {} 上行: {} 下行: {}", &statistic_date.to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+    tracing::info!(
+        "天统计: {} 上行: {} 下行: {}",
+        &statistic_date.to_string(),
+        traffic_show(uplink_traffic_usage),
+        traffic_show(downlink_traffic_usage)
+    );
     let monitor_day = MonitorDay {
         id: None,
         create_time: None,
@@ -115,44 +168,103 @@ pub async fn collect_day_data(app_state: &AppState, statistic_date: NaiveDate) -
         downlink_traffic_usage: Some(downlink_traffic_usage),
     };
     monitor_day_mapper::create(monitor_day, &app_state.db_pool).await?;
-    
+
     let day = statistic_date - chrono::Duration::days(1);
-    monitor_second_mapper::delete_by_date(day.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap()), &app_state.db_pool).await?;
+    monitor_second_mapper::delete_by_date(
+        day.and_time(NaiveTime::from_hms_milli_opt(0, 0, 0, 0).unwrap()),
+        &app_state.db_pool,
+    )
+    .await?;
 
     if let Some(tg) = &app_state.config.tg {
-        let mut text = format!("{}\n{} 上传: {} 下载: {}", &app_state.config.vps_name, day.to_string(), traffic_show(uplink_traffic_usage), traffic_show(downlink_traffic_usage));
+        let mut text = format!(
+            "{}\n{} 上传: {} 下载: {}",
+            &app_state.config.vps_name,
+            day.to_string(),
+            traffic_show(uplink_traffic_usage),
+            traffic_show(downlink_traffic_usage)
+        );
         let cycle = app_state.cycle.read().await.clone();
         if let Some(cycle) = cycle {
             if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
                 return anyhow::Ok(());
             }
             let yesterday_traffic_usage = match cycle.statistic_method {
-                CycleStatisticMethod::MaxInOut => std::cmp::max(uplink_traffic_usage, downlink_traffic_usage),
+                CycleStatisticMethod::MaxInOut => {
+                    std::cmp::max(uplink_traffic_usage, downlink_traffic_usage)
+                }
                 CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
                 CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
             };
             if cycle.current_cycle_start_date == chrono::Local::now().date_naive() {
                 let pre_start = match cycle.cycle_type {
-                    CycleType::DAY(each, _) =>  cycle.current_cycle_start_date - chrono::Duration::days(each),
-                    CycleType::MONTH(each, _) => cycle.current_cycle_start_date.checked_sub_months(Months::new(each as u32)).unwrap(),
+                    CycleType::DAY(each, _) => {
+                        cycle.current_cycle_start_date - chrono::Duration::days(each)
+                    }
+                    CycleType::MONTH(each, _) => cycle
+                        .current_cycle_start_date
+                        .checked_sub_months(Months::new(each as u32))
+                        .unwrap(),
                     _ => return Err(anyhow!("cycle_type 不会出现此类型")),
                 };
                 let pre_end = cycle.current_cycle_start_date - chrono::Duration::days(1);
-                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(pre_start, pre_end, &app_state.db_pool).await?.unwrap_or((0, 0));
+                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
+                    monitor_day_mapper::sum_daterange_data(pre_start, pre_end, &app_state.db_pool)
+                        .await?
+                        .unwrap_or((0, 0));
                 let cycle_traffic_usage = match cycle.statistic_method {
-                    CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage),
+                    CycleStatisticMethod::MaxInOut => std::cmp::max(
+                        cycle_day_uplink_traffic_usage,
+                        cycle_day_downlink_traffic_usage,
+                    ),
                     CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
-                    CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
+                    CycleStatisticMethod::SumInOut => {
+                        cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
+                    }
                 };
-                text = format!("{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n上一周期已结束", text, traffic_show(yesterday_traffic_usage), pre_start, pre_end, traffic_show(cycle_day_uplink_traffic_usage), traffic_show(cycle_day_downlink_traffic_usage), traffic_show(cycle_traffic_usage), traffic_show(cycle.traffic_limit));
+                text = format!(
+                    "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n上一周期已结束",
+                    text,
+                    traffic_show(yesterday_traffic_usage),
+                    pre_start,
+                    pre_end,
+                    traffic_show(cycle_day_uplink_traffic_usage),
+                    traffic_show(cycle_day_downlink_traffic_usage),
+                    traffic_show(cycle_traffic_usage),
+                    traffic_show(cycle.traffic_limit)
+                );
             } else {
-                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(cycle.current_cycle_start_date, cycle.current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
+                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
+                    monitor_day_mapper::sum_daterange_data(
+                        cycle.current_cycle_start_date,
+                        cycle.current_cycle_end_date,
+                        &app_state.db_pool,
+                    )
+                    .await?
+                    .unwrap_or((0, 0));
                 let cycle_traffic_usage = match cycle.statistic_method {
-                    CycleStatisticMethod::MaxInOut => std::cmp::max(cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage),
+                    CycleStatisticMethod::MaxInOut => std::cmp::max(
+                        cycle_day_uplink_traffic_usage,
+                        cycle_day_downlink_traffic_usage,
+                    ),
                     CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
-                    CycleStatisticMethod::SumInOut => cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage,
+                    CycleStatisticMethod::SumInOut => {
+                        cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
+                    }
                 };
-                text = format!("{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n距下次重置: {}天", text, traffic_show(yesterday_traffic_usage), cycle.current_cycle_start_date, cycle.current_cycle_end_date, traffic_show(cycle_day_uplink_traffic_usage), traffic_show(cycle_day_downlink_traffic_usage), traffic_show(cycle_traffic_usage), traffic_show(cycle.traffic_limit), (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1);
+                text = format!(
+                    "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n距下次重置: {}天",
+                    text,
+                    traffic_show(yesterday_traffic_usage),
+                    cycle.current_cycle_start_date,
+                    cycle.current_cycle_end_date,
+                    traffic_show(cycle_day_uplink_traffic_usage),
+                    traffic_show(cycle_day_downlink_traffic_usage),
+                    traffic_show(cycle_traffic_usage),
+                    traffic_show(cycle.traffic_limit),
+                    (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days()
+                        + 1
+                );
             }
         }
         let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
@@ -182,7 +294,10 @@ fn traffic_show<T: Into<Decimal>>(bytes: T) -> String {
     }
 }
 
-async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downlink_traffic_usage): (i64, i64)) -> anyhow::Result<()> {
+async fn verify_exceeds_limit(
+    app_state: &AppState,
+    (uplink_traffic_usage, downlink_traffic_usage): (i64, i64),
+) -> anyhow::Result<()> {
     let config = &app_state.config;
     if config.traffic_cycle.is_none() {
         return anyhow::Ok(());
@@ -199,37 +314,64 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
     cycle.downlink_traffic_usage = cycle.downlink_traffic_usage + downlink_traffic_usage;
     let traffic_limit = Decimal::from_i64(cycle.traffic_limit).unwrap();
     let traffic_usage = Decimal::from_i64(match cycle.statistic_method {
-        CycleStatisticMethod::MaxInOut => std::cmp::max(cycle.uplink_traffic_usage, cycle.downlink_traffic_usage),
+        CycleStatisticMethod::MaxInOut => {
+            std::cmp::max(cycle.uplink_traffic_usage, cycle.downlink_traffic_usage)
+        }
         CycleStatisticMethod::OnlyOut => cycle.uplink_traffic_usage,
         CycleStatisticMethod::SumInOut => cycle.uplink_traffic_usage + cycle.downlink_traffic_usage,
-    }).unwrap();
-    tracing::debug!("流量周期统计: 已用量: {} 限制: {}", traffic_show(traffic_usage), traffic_show(traffic_limit));
+    })
+    .unwrap();
+    tracing::debug!(
+        "流量周期统计: 已用量: {} 限制: {}",
+        traffic_show(traffic_usage),
+        traffic_show(traffic_limit)
+    );
     if traffic_usage >= traffic_limit {
         if !cycle.notify_exceeds {
             tracing::warn!("{} 流量超限", config.vps_name);
             cycle.notify_exceeds = true;
-            let text = format!("{} 流量超限 {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!(
+                "{} 流量超限 {}/{}",
+                config.vps_name,
+                traffic_show(traffic_usage),
+                traffic_show(traffic_limit)
+            );
             tg_util::send_msg(config, text).await;
         }
     } else if traffic_usage >= traffic_limit * dec!(0.9) {
         if !cycle.notify_90 {
             tracing::warn!("{} 流量使用超90%", config.vps_name);
             cycle.notify_90 = true;
-            let text = format!("{} 流量使用超90% {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!(
+                "{} 流量使用超90% {}/{}",
+                config.vps_name,
+                traffic_show(traffic_usage),
+                traffic_show(traffic_limit)
+            );
             tg_util::send_msg(config, text).await;
         }
     } else if traffic_usage >= traffic_limit * dec!(0.8) {
         if !cycle.notify_80 {
             tracing::warn!("{} 流量使用超80%", config.vps_name);
             cycle.notify_80 = true;
-            let text = format!("{} 流量使用超80% {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!(
+                "{} 流量使用超80% {}/{}",
+                config.vps_name,
+                traffic_show(traffic_usage),
+                traffic_show(traffic_limit)
+            );
             tg_util::send_msg(config, text).await;
         }
     } else if traffic_usage >= traffic_limit * dec!(0.5) {
         if !cycle.notify_half {
             tracing::warn!("{} 流量使用超半", config.vps_name);
             cycle.notify_half = true;
-            let text = format!("{} 流量使用超半 {}/{}", config.vps_name, traffic_show(traffic_usage), traffic_show(traffic_limit));
+            let text = format!(
+                "{} 流量使用超半 {}/{}",
+                config.vps_name,
+                traffic_show(traffic_usage),
+                traffic_show(traffic_limit)
+            );
             tg_util::send_msg(config, text).await;
         }
     }
@@ -240,11 +382,17 @@ async fn verify_exceeds_limit(app_state: &AppState, (uplink_traffic_usage, downl
             match command_util::execute_to_output(".".to_string(), vec![exec.clone()]).await {
                 Ok(res) => {
                     if res.status.success() {
-                        tracing::info!("执行命令成功，执行结果: {}", String::from_utf8_lossy(&res.stdout))
+                        tracing::info!(
+                            "执行命令成功，执行结果: {}",
+                            String::from_utf8_lossy(&res.stdout)
+                        )
                     } else {
-                        tracing::info!("执行命令失败，执行结果: {}", String::from_utf8_lossy(&res.stderr))
+                        tracing::info!(
+                            "执行命令失败，执行结果: {}",
+                            String::from_utf8_lossy(&res.stderr)
+                        )
                     }
-                },
+                }
                 Err(e) => tracing::info!("命令提交失败: {:?}", e),
             }
         }
@@ -259,10 +407,29 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     }
     let liftcycle = config.traffic_cycle.as_ref().unwrap();
     let cycle_type = match liftcycle.cycle_type.as_str() {
-        "day" => CycleType::DAY(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
-        "month" => CycleType::MONTH(liftcycle.each.unwrap(), chrono::NaiveDate::parse_from_str(liftcycle.traffic_reset_date.as_ref().unwrap(), "%Y-%m-%d")?),
-        "once" => CycleType::ONCE(chrono::NaiveDate::parse_from_str(liftcycle.start_date.as_ref().unwrap(), "%Y-%m-%d")?, chrono::NaiveDate::parse_from_str(liftcycle.end_date.as_ref().unwrap(), "%Y-%m-%d")?),
-        _ => return Err(anyhow!("config[liftcycle][cycle] 配置填写错误，没有这样的类型")),
+        "day" => CycleType::DAY(
+            liftcycle.each.unwrap(),
+            chrono::NaiveDate::parse_from_str(
+                liftcycle.traffic_reset_date.as_ref().unwrap(),
+                "%Y-%m-%d",
+            )?,
+        ),
+        "month" => CycleType::MONTH(
+            liftcycle.each.unwrap(),
+            chrono::NaiveDate::parse_from_str(
+                liftcycle.traffic_reset_date.as_ref().unwrap(),
+                "%Y-%m-%d",
+            )?,
+        ),
+        "once" => CycleType::ONCE(
+            chrono::NaiveDate::parse_from_str(liftcycle.start_date.as_ref().unwrap(), "%Y-%m-%d")?,
+            chrono::NaiveDate::parse_from_str(liftcycle.end_date.as_ref().unwrap(), "%Y-%m-%d")?,
+        ),
+        _ => {
+            return Err(anyhow!(
+                "config[liftcycle][cycle] 配置填写错误，没有这样的类型"
+            ))
+        }
     };
     let now = chrono::Local::now().date_naive();
     let (mut current_cycle_start_date, mut current_cycle_end_date);
@@ -281,18 +448,25 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         let add_or_sub = if now >= traffic_reset_date { 1 } else { -1 };
         loop {
             let end = match cycle_type {
-                CycleType::DAY(each, _) =>  traffic_reset_date + chrono::Duration::days(each * add_or_sub),
+                CycleType::DAY(each, _) => {
+                    traffic_reset_date + chrono::Duration::days(each * add_or_sub)
+                }
                 CycleType::MONTH(each, _) => {
                     if add_or_sub == 1 {
-                        traffic_reset_date.checked_add_months(Months::new(each as u32)).unwrap()
+                        traffic_reset_date
+                            .checked_add_months(Months::new(each as u32))
+                            .unwrap()
                     } else {
-                        traffic_reset_date.checked_sub_months(Months::new(each as u32)).unwrap()
+                        traffic_reset_date
+                            .checked_sub_months(Months::new(each as u32))
+                            .unwrap()
                     }
-                },
+                }
                 _ => return Err(anyhow!("cycle_type 不会出现此类型")),
             };
             current_cycle_start_date = std::cmp::min(traffic_reset_date, end);
-            current_cycle_end_date = std::cmp::max(traffic_reset_date, end) - chrono::Duration::days(1);
+            current_cycle_end_date =
+                std::cmp::max(traffic_reset_date, end) - chrono::Duration::days(1);
             if now >= current_cycle_start_date && now <= current_cycle_end_date {
                 break;
             }
@@ -303,9 +477,17 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         "sum(in,out)" => CycleStatisticMethod::SumInOut,
         "max(in,out)" => CycleStatisticMethod::MaxInOut,
         "out" => CycleStatisticMethod::OnlyOut,
-        _ => return Err(anyhow!("config[liftcycle][statistic_method] 配置填写错误，没有这样的类型")),
+        _ => {
+            return Err(anyhow!(
+                "config[liftcycle][statistic_method] 配置填写错误，没有这样的类型"
+            ))
+        }
     };
-    let traffic_limit = &liftcycle.traffic_limit.replace(" ", "").replace(",", "").replace("_", "");
+    let traffic_limit = &liftcycle
+        .traffic_limit
+        .replace(" ", "")
+        .replace(",", "")
+        .replace("_", "");
     let traffic_limit = if let Some(traffic_limit) = traffic_limit.strip_suffix("MB") {
         Decimal::from_str(traffic_limit).unwrap() * Decimal::from_i64(MB).unwrap()
     } else if let Some(traffic_limit) = traffic_limit.strip_suffix("GB") {
@@ -313,13 +495,29 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     } else if let Some(traffic_limit) = traffic_limit.strip_suffix("TB") {
         Decimal::from_str(traffic_limit).unwrap() * Decimal::from_i64(TB).unwrap()
     } else {
-        return Err(anyhow!("config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"));
+        return Err(anyhow!(
+            "config[liftcycle][traffic_limit] 需要以 MB GB TB 结尾"
+        ));
     };
     let traffic_limit = traffic_limit.to_string().parse::<i64>()?;
     let now = chrono::Local::now().date_naive();
     let day_start_time = now.and_hms_opt(0, 0, 0).unwrap();
-    let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) = monitor_day_mapper::get_daterange_data(current_cycle_start_date, current_cycle_end_date, &app_state.db_pool).await?.unwrap_or((0, 0));
-    let (today_uplink_traffic_usage, today_downlink_traffic_usage) = monitor_second_mapper::get_timerange_data(day_start_time, day_start_time + Duration::days(1), &app_state.db_pool).await?.unwrap_or((0, 0));
+    let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
+        monitor_day_mapper::sum_daterange_data(
+            current_cycle_start_date,
+            current_cycle_end_date,
+            &app_state.db_pool,
+        )
+        .await?
+        .unwrap_or((0, 0));
+    let (today_uplink_traffic_usage, today_downlink_traffic_usage) =
+        monitor_second_mapper::sum_timerange_data(
+            day_start_time,
+            day_start_time + Duration::days(1),
+            &app_state.db_pool,
+        )
+        .await?
+        .unwrap_or((0, 0));
     let uplink_traffic_usage = cycle_day_uplink_traffic_usage + today_uplink_traffic_usage;
     let downlink_traffic_usage = cycle_day_downlink_traffic_usage + today_downlink_traffic_usage;
     let cycle = CycleAppState {
