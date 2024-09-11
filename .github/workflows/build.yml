@@ -4,6 +4,9 @@ on:
   push:
     tags: "*"
 
+with:
+    token: ${{ secrets.WORKFLOW_TOKEN }}
+
 env:
   CARGO_TERM_COLOR: always
 
