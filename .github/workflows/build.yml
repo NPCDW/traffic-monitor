@@ -31,5 +31,3 @@ jobs:
           tags: |
             npcdw/traffic-monitor:${{ github.ref_name }}
             npcdw/traffic-monitor:latest
-          cache-from: type=registry,ref=npcdw/traffic-monitor:buildcache
-          cache-to: type=registry,ref=npcdw/traffic-monitor:buildcache,mode=max
