@@ -3,7 +3,7 @@ use std::any::Any;
 use axum::http::Response;
 use axum::response::IntoResponse;
 use axum::{
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use tower_http::validate_request::ValidateRequestHeaderLayer;
@@ -19,9 +19,9 @@ pub async fn init(app_state: AppState) -> Router {
         .route("/state", get(app_ctl::state));
 
     let traffic = Router::new()
-        .route("/day", get(traffic_ctl::list_monitor_day))
-        .route("/hour", get(traffic_ctl::list_monitor_hour))
-        .route("/second", get(traffic_ctl::list_monitor_second));
+        .route("/day", post(traffic_ctl::list_monitor_day))
+        .route("/hour", post(traffic_ctl::list_monitor_hour))
+        .route("/second", post(traffic_ctl::list_monitor_second));
 
     let api = Router::new()
         .nest("/app", app)

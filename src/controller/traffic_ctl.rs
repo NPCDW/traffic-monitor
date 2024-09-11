@@ -54,8 +54,6 @@ pub async fn list_monitor_hour(
 pub struct PageMonitorSecondParam {
     start_time: String,
     end_time: String,
-    page_number: u32,
-    page_size: u32,
 }
 
 pub async fn list_monitor_second(
