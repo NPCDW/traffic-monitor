@@ -154,7 +154,7 @@ pub async fn delete_by_date(
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     let mut query_builder = QueryBuilder::new("delete from monitor_second where ");
     query_builder
-        .push("end_time < ")
+        .push("start_time < ")
         .push_bind(date.format("%Y-%m-%dT%H:%M:%S").to_string());
     let query = query_builder.build();
     tracing::debug!("删除秒级监控数据SQL: {}", query.sql());

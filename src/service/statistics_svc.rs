@@ -35,19 +35,16 @@ pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
         return anyhow::Ok(());
     }
     collect_second_data(app_state).await?;
-    if now.date() == pre_end_time.date()
-        && now.hour() == pre_end_time.hour()
-        && (pre_end_time.minute() >= 1 || now.minute() < 1)
-    {
-        return anyhow::Ok(());
-    }
     collect_hour_data(app_state, pre_end_time).await?;
-    if now.date() == pre_end_time.date()
-        && (pre_end_time.hour() > 0 || (pre_end_time.minute() >= 2 || now.minute() < 2))
-    {
-        return anyhow::Ok(());
+    // todo 查询是否有 pre_end_time 的小时统计数据，或当前正在另一个小时的定时任务之前
+    if pre_end_time.minute() <= 1 {
+        collect_hour_data(app_state, pre_end_time - chrono::Duration::hours(1)).await?;
     }
     collect_day_data(app_state, pre_end_time.date()).await?;
+    if pre_end_time.hour() == 0 && pre_end_time.minute() <= 2
+    {
+        collect_day_data(app_state, pre_end_time.date() - chrono::Duration::days(1)).await?;
+    }
     anyhow::Ok(())
 }
 
@@ -141,7 +138,12 @@ pub async fn collect_hour_data(
         uplink_traffic_usage: Some(uplink_traffic_usage),
         downlink_traffic_usage: Some(downlink_traffic_usage),
     };
-    monitor_hour_mapper::create(monitor_hour, &app_state.db_pool).await?;
+    let entity = monitor_hour_mapper::get_day_hour_data(day.date(), start_time.hour(), &app_state.db_pool).await?;
+    if let Some(entity) = entity {
+        monitor_hour_mapper::update(entity, &app_state.db_pool).await?;
+    } else {
+        monitor_hour_mapper::create(monitor_hour, &app_state.db_pool).await?;
+    }
     anyhow::Ok(())
 }
 
@@ -167,7 +169,12 @@ pub async fn collect_day_data(
         uplink_traffic_usage: Some(uplink_traffic_usage),
         downlink_traffic_usage: Some(downlink_traffic_usage),
     };
-    monitor_day_mapper::create(monitor_day, &app_state.db_pool).await?;
+    let entity = monitor_day_mapper::get_day_data(statistic_date, &app_state.db_pool).await?;
+    if let Some(entity) = entity {
+        monitor_day_mapper::update(entity, &app_state.db_pool).await?;
+    } else {
+        monitor_day_mapper::create(monitor_day, &app_state.db_pool).await?;
+    }
 
     let day = statistic_date - chrono::Duration::days(1);
     monitor_second_mapper::delete_by_date(

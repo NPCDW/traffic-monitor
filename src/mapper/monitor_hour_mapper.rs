@@ -14,6 +14,33 @@ pub struct MonitorHour {
     pub downlink_traffic_usage: Option<i64>,
 }
 
+pub async fn update(
+    entity: MonitorHour,
+    pool: &Pool<Sqlite>,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("update monitor_hour set ");
+    let mut separated = query_builder.separated(", ");
+    if entity.day.is_some() {
+        separated.push("day = ").push_bind_unseparated(entity.day.unwrap());
+    }
+    if entity.hour.is_some() {
+        separated.push("hour = ").push_bind_unseparated(entity.hour.unwrap());
+    }
+    if entity.uplink_traffic_usage.is_some() {
+        separated.push("uplink_traffic_usage = ").push_bind_unseparated(entity.uplink_traffic_usage.unwrap());
+    }
+    if entity.downlink_traffic_usage.is_some() {
+        separated.push("downlink_traffic_usage = ").push_bind_unseparated(entity.downlink_traffic_usage.unwrap());
+    }
+    query_builder.push(" where id = ").push_bind(entity.id.unwrap());
+
+    let query = query_builder.build();
+    tracing::debug!("更新小时监控数据SQL: {}", query.sql());
+    let res = query.execute(pool).await;
+    tracing::debug!("更新小时监控数据结果: {:?}", res);
+    res
+}
+
 pub async fn create(
     entity: MonitorHour,
     pool: &Pool<Sqlite>,
@@ -64,6 +91,22 @@ pub async fn sum_day_data(
     );
     query_builder.push("day = ").push_bind(day);
     let query = query_builder.build_query_as::<(i64, i64)>();
+    tracing::debug!("查询一天的小时监控数据SQL: {}", query.sql());
+    let res = query.fetch_optional(pool).await;
+    tracing::debug!("查询一天的小时监控数据结果: {:?}", res);
+    res
+}
+
+pub async fn get_day_hour_data(
+    day: NaiveDate,
+    hour: u32,
+    pool: &Pool<Sqlite>,
+) -> Result<Option<MonitorHour>, sqlx::Error> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
+        format!("select {} from monitor_hour where ", ALL_FIELDS),
+    );
+    query_builder.push("day = ").push_bind(day).push(" and hour = ").push_bind(hour);
+    let query = query_builder.build_query_as::<MonitorHour>();
     tracing::debug!("查询一天的小时监控数据SQL: {}", query.sql());
     let res = query.fetch_optional(pool).await;
     tracing::debug!("查询一天的小时监控数据结果: {:?}", res);

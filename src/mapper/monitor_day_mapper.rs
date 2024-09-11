@@ -13,6 +13,30 @@ pub struct MonitorDay {
     pub downlink_traffic_usage: Option<i64>,
 }
 
+pub async fn update(
+    entity: MonitorDay,
+    pool: &Pool<Sqlite>,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("update monitor_day set ");
+    let mut separated = query_builder.separated(", ");
+    if entity.day.is_some() {
+        separated.push("day = ").push_bind_unseparated(entity.day.unwrap());
+    }
+    if entity.uplink_traffic_usage.is_some() {
+        separated.push("uplink_traffic_usage = ").push_bind_unseparated(entity.uplink_traffic_usage.unwrap());
+    }
+    if entity.downlink_traffic_usage.is_some() {
+        separated.push("downlink_traffic_usage = ").push_bind_unseparated(entity.downlink_traffic_usage.unwrap());
+    }
+    query_builder.push(" where id = ").push_bind(entity.id.unwrap());
+
+    let query = query_builder.build();
+    tracing::debug!("更新天监控数据SQL: {}", query.sql());
+    let res = query.execute(pool).await;
+    tracing::debug!("更新天监控数据结果: {:?}", res);
+    res
+}
+
 pub async fn create(
     entity: MonitorDay,
     pool: &Pool<Sqlite>,
@@ -59,6 +83,20 @@ pub async fn sum_daterange_data(
     query_builder.push("day >= ").push_bind(start_date);
     query_builder.push(" and day <= ").push_bind(end_date);
     let query = query_builder.build_query_as::<(i64, i64)>();
+    tracing::debug!("查询区域天监控数据SQL: {}", query.sql());
+    let res = query.fetch_optional(pool).await;
+    tracing::debug!("查询区域天监控数据结果: {:?}", res);
+    res
+}
+
+pub async fn get_day_data(
+    day: NaiveDate,
+    pool: &Pool<Sqlite>,
+) -> Result<Option<MonitorDay>, sqlx::Error> {
+    let mut query_builder: QueryBuilder<Sqlite> =
+        QueryBuilder::new(format!("select {} from monitor_day where ", ALL_FIELDS));
+    query_builder.push("day = ").push_bind(day);
+    let query = query_builder.build_query_as::<MonitorDay>();
     tracing::debug!("查询区域天监控数据SQL: {}", query.sql());
     let res = query.fetch_optional(pool).await;
     tracing::debug!("查询区域天监控数据结果: {:?}", res);

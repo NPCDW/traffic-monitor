@@ -9,7 +9,7 @@
     },
     "traffic_cycle": {
         "cycle_type": "month",
-        "each": "1",
+        "each": 1,
         "traffic_reset_date": "2024-08-01",
         "traffic_limit": "200GB",
         "statistic_method": "max(in,out)",
