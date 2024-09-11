@@ -4,6 +4,9 @@ on:
   push:
     tags: "*"
 
+permissions:
+  actions: write
+
 env:
   CARGO_TERM_COLOR: always
 
