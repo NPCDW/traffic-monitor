@@ -244,7 +244,7 @@ pub async fn collect_day_data(
                 let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
                     monitor_day_mapper::sum_daterange_data(
                         cycle.current_cycle_start_date,
-                        cycle.current_cycle_end_date,
+                        chrono::Local::now().date_naive() - chrono::Duration::days(1),
                         &app_state.db_pool,
                     )
                     .await?
@@ -319,15 +319,15 @@ async fn verify_exceeds_limit(
     }
     cycle.uplink_traffic_usage = cycle.uplink_traffic_usage + uplink_traffic_usage;
     cycle.downlink_traffic_usage = cycle.downlink_traffic_usage + downlink_traffic_usage;
-    let traffic_limit = Decimal::from_i64(cycle.traffic_limit).unwrap();
-    let traffic_usage = Decimal::from_i64(match cycle.statistic_method {
+    cycle.traffic_usage = match cycle.statistic_method {
         CycleStatisticMethod::MaxInOut => {
             std::cmp::max(cycle.uplink_traffic_usage, cycle.downlink_traffic_usage)
         }
         CycleStatisticMethod::OnlyOut => cycle.uplink_traffic_usage,
         CycleStatisticMethod::SumInOut => cycle.uplink_traffic_usage + cycle.downlink_traffic_usage,
-    })
-    .unwrap();
+    };
+    let traffic_limit = Decimal::from_i64(cycle.traffic_limit).unwrap();
+    let traffic_usage = Decimal::from_i64(cycle.traffic_usage).unwrap();
     tracing::debug!(
         "流量周期统计: 已用量: {} 限制: {}",
         traffic_show(traffic_usage),
@@ -512,7 +512,7 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
         monitor_day_mapper::sum_daterange_data(
             current_cycle_start_date,
-            current_cycle_end_date,
+            chrono::Local::now().date_naive() - chrono::Duration::days(1),
             &app_state.db_pool,
         )
         .await?
@@ -527,6 +527,13 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         .unwrap_or((0, 0));
     let uplink_traffic_usage = cycle_day_uplink_traffic_usage + today_uplink_traffic_usage;
     let downlink_traffic_usage = cycle_day_downlink_traffic_usage + today_downlink_traffic_usage;
+    let traffic_usage = match statistic_method {
+        CycleStatisticMethod::MaxInOut => {
+            std::cmp::max(uplink_traffic_usage, downlink_traffic_usage)
+        }
+        CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
+        CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
+    };
     let cycle = CycleAppState {
         cycle_type,
         current_cycle_start_date,
@@ -534,6 +541,7 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         uplink_traffic_usage,
         downlink_traffic_usage,
         traffic_limit,
+        traffic_usage,
         notify_exceeds: false,
         notify_half: false,
         notify_80: false,
