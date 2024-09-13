@@ -117,7 +117,7 @@ pub async fn collect_hour_data(
         return anyhow::Ok(());
     }
     let (uplink_traffic_usage, downlink_traffic_usage) = res.unwrap();
-    tracing::info!(
+    tracing::debug!(
         "小时统计: {} {} 上行: {} 下行: {}",
         &day.date().to_string(),
         start_time.hour(),
@@ -151,7 +151,7 @@ pub async fn collect_day_data(
         return anyhow::Ok(());
     }
     let (uplink_traffic_usage, downlink_traffic_usage) = res.unwrap();
-    tracing::info!(
+    tracing::debug!(
         "天统计: {} 上行: {} 下行: {}",
         &statistic_date.to_string(),
         traffic_show(uplink_traffic_usage),
