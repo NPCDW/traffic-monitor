@@ -410,7 +410,8 @@ async fn verify_exceeds_limit(
 async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
     let config = &app_state.config;
     if config.traffic_cycle.is_none() {
-        return Err(anyhow!("config[liftcycle] 没有配置，生成流量周期失败"));
+        tracing::info!("config[traffic_cycle] 没有配置，不生成流量周期");
+        return anyhow::Ok(());
     }
     let liftcycle = config.traffic_cycle.as_ref().unwrap();
     let cycle_type = match liftcycle.cycle_type.as_str() {
