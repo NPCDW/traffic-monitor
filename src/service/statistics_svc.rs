@@ -99,6 +99,10 @@ pub async fn collect_second_data(app_state: &AppState) -> anyhow::Result<()> {
     };
     monitor_second_mapper::create(monitor_second, &app_state.db_pool).await?;
 
+    collect_hour_data(app_state, start_time).await?;
+
+    collect_day_data(app_state, start_time.date()).await?;
+
     verify_exceeds_limit(app_state, (uplink_traffic_usage, downlink_traffic_usage)).await?;
 
     anyhow::Ok(())
@@ -183,106 +187,118 @@ pub async fn collect_day_data(
     )
     .await?;
 
-    if let Some(tg) = &app_state.config.tg {
-        let mut text = format!(
-            "{}\n{} 上传: {} 下载: {}",
-            &app_state.config.vps_name,
-            day.to_string(),
-            traffic_show(uplink_traffic_usage),
-            traffic_show(downlink_traffic_usage)
-        );
-        let cycle = app_state.cycle.read().await.clone();
-        if let Some(cycle) = cycle {
-            if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
-                return anyhow::Ok(());
+    anyhow::Ok(())
+}
+
+pub async fn tg_notify_daily_statistics(app_state: &AppState, day: NaiveDate) -> anyhow::Result<()> {
+    let tg = match &app_state.config.tg {
+        Some(tg) => tg,
+        None => return anyhow::Ok(()),
+    };
+    let entity = match monitor_day_mapper::get_day_data(day, &app_state.db_pool).await? {
+        Some(entity) => entity,
+        None => return Err(anyhow!("未找到当天的统计数据")),
+    };
+    let uplink_traffic_usage = entity.uplink_traffic_usage.unwrap();
+    let downlink_traffic_usage = entity.downlink_traffic_usage.unwrap();
+    let mut text = format!(
+        "{}\n{} 上传: {} 下载: {}",
+        &app_state.config.vps_name,
+        day.to_string(),
+        traffic_show(uplink_traffic_usage),
+        traffic_show(downlink_traffic_usage)
+    );
+    let cycle = app_state.cycle.read().await.clone();
+    if let Some(cycle) = cycle {
+        if cycle.current_cycle_end_date < chrono::Local::now().date_naive() {
+            return anyhow::Ok(());
+        }
+        let yesterday_traffic_usage = match cycle.statistic_method {
+            CycleStatisticMethod::MaxInOut => {
+                std::cmp::max(uplink_traffic_usage, downlink_traffic_usage)
             }
-            let yesterday_traffic_usage = match cycle.statistic_method {
-                CycleStatisticMethod::MaxInOut => {
-                    std::cmp::max(uplink_traffic_usage, downlink_traffic_usage)
+            CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
+            CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
+        };
+        if cycle.current_cycle_start_date == chrono::Local::now().date_naive() {
+            let pre_start = match cycle.cycle_type {
+                CycleType::DAY(each, _) => {
+                    cycle.current_cycle_start_date - chrono::Duration::days(each)
                 }
-                CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
-                CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
+                CycleType::MONTH(each, _) => cycle
+                    .current_cycle_start_date
+                    .checked_sub_months(Months::new(each as u32))
+                    .unwrap(),
+                _ => return Err(anyhow!("cycle_type 不会出现此类型")),
             };
-            if cycle.current_cycle_start_date == chrono::Local::now().date_naive() {
-                let pre_start = match cycle.cycle_type {
-                    CycleType::DAY(each, _) => {
-                        cycle.current_cycle_start_date - chrono::Duration::days(each)
-                    }
-                    CycleType::MONTH(each, _) => cycle
-                        .current_cycle_start_date
-                        .checked_sub_months(Months::new(each as u32))
-                        .unwrap(),
-                    _ => return Err(anyhow!("cycle_type 不会出现此类型")),
-                };
-                let pre_end = cycle.current_cycle_start_date - chrono::Duration::days(1);
-                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
-                    monitor_day_mapper::sum_daterange_data(pre_start, pre_end, &app_state.db_pool)
-                        .await?
-                        .unwrap_or((0, 0));
-                let cycle_traffic_usage = match cycle.statistic_method {
-                    CycleStatisticMethod::MaxInOut => std::cmp::max(
-                        cycle_day_uplink_traffic_usage,
-                        cycle_day_downlink_traffic_usage,
-                    ),
-                    CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
-                    CycleStatisticMethod::SumInOut => {
-                        cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
-                    }
-                };
-                text = format!(
-                    "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n上一周期已结束",
-                    text,
-                    traffic_show(yesterday_traffic_usage),
-                    pre_start,
-                    pre_end,
-                    traffic_show(cycle_day_uplink_traffic_usage),
-                    traffic_show(cycle_day_downlink_traffic_usage),
-                    traffic_show(cycle_traffic_usage),
-                    traffic_show(cycle.traffic_limit)
-                );
-            } else {
-                let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
-                    monitor_day_mapper::sum_daterange_data(
-                        cycle.current_cycle_start_date,
-                        chrono::Local::now().date_naive() - chrono::Duration::days(1),
-                        &app_state.db_pool,
-                    )
+            let pre_end = cycle.current_cycle_start_date - chrono::Duration::days(1);
+            let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
+                monitor_day_mapper::sum_daterange_data(pre_start, pre_end, &app_state.db_pool)
                     .await?
                     .unwrap_or((0, 0));
-                let cycle_traffic_usage = match cycle.statistic_method {
-                    CycleStatisticMethod::MaxInOut => std::cmp::max(
-                        cycle_day_uplink_traffic_usage,
-                        cycle_day_downlink_traffic_usage,
-                    ),
-                    CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
-                    CycleStatisticMethod::SumInOut => {
-                        cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
-                    }
-                };
-                text = format!(
-                    "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n距下次重置: {}天",
-                    text,
-                    traffic_show(yesterday_traffic_usage),
+            let cycle_traffic_usage = match cycle.statistic_method {
+                CycleStatisticMethod::MaxInOut => std::cmp::max(
+                    cycle_day_uplink_traffic_usage,
+                    cycle_day_downlink_traffic_usage,
+                ),
+                CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
+                CycleStatisticMethod::SumInOut => {
+                    cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
+                }
+            };
+            text = format!(
+                "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n上一周期已结束",
+                text,
+                traffic_show(yesterday_traffic_usage),
+                pre_start,
+                pre_end,
+                traffic_show(cycle_day_uplink_traffic_usage),
+                traffic_show(cycle_day_downlink_traffic_usage),
+                traffic_show(cycle_traffic_usage),
+                traffic_show(cycle.traffic_limit)
+            );
+        } else {
+            let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
+                monitor_day_mapper::sum_daterange_data(
                     cycle.current_cycle_start_date,
-                    cycle.current_cycle_end_date,
-                    traffic_show(cycle_day_uplink_traffic_usage),
-                    traffic_show(cycle_day_downlink_traffic_usage),
-                    traffic_show(cycle_traffic_usage),
-                    traffic_show(cycle.traffic_limit),
-                    (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days()
-                        + 1
-                );
-            }
-        }
-        let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
-        let body = json!({"chat_id": tg.chat_id, "text": text, "parse_mode": "Markdown", "message_thread_id": tg.topic_id}).to_string();
-        tracing::debug!("每日报告消息 body: {}", &body);
-        match http_util::post(&url, body).await {
-            Ok(_) => tracing::info!("tg 每日报告消息发送成功"),
-            Err(e) => tracing::error!("tg 消息发送失败: {}", e),
+                    chrono::Local::now().date_naive() - chrono::Duration::days(1),
+                    &app_state.db_pool,
+                )
+                .await?
+                .unwrap_or((0, 0));
+            let cycle_traffic_usage = match cycle.statistic_method {
+                CycleStatisticMethod::MaxInOut => std::cmp::max(
+                    cycle_day_uplink_traffic_usage,
+                    cycle_day_downlink_traffic_usage,
+                ),
+                CycleStatisticMethod::OnlyOut => cycle_day_uplink_traffic_usage,
+                CycleStatisticMethod::SumInOut => {
+                    cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
+                }
+            };
+            text = format!(
+                "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n距下次重置: {}天",
+                text,
+                traffic_show(yesterday_traffic_usage),
+                cycle.current_cycle_start_date,
+                cycle.current_cycle_end_date,
+                traffic_show(cycle_day_uplink_traffic_usage),
+                traffic_show(cycle_day_downlink_traffic_usage),
+                traffic_show(cycle_traffic_usage),
+                traffic_show(cycle.traffic_limit),
+                (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days()
+                    + 1
+            );
         }
     }
-
+    let url = format!("https://api.telegram.org/bot{}/sendMessage", tg.bot_token);
+    let body = json!({"chat_id": tg.chat_id, "text": text, "parse_mode": "Markdown", "message_thread_id": tg.topic_id}).to_string();
+    tracing::debug!("每日报告消息 body: {}", &body);
+    match http_util::post(&url, body).await {
+        Ok(_) => tracing::info!("tg 每日报告消息发送成功"),
+        Err(e) => tracing::error!("tg 消息发送失败: {}", e),
+    }
+    
     anyhow::Ok(())
 }
 

@@ -123,7 +123,7 @@ pub async fn list_timerange_data(
     );
     query_builder.push(" (day = ").push_bind(start_time.date()).push(" and hour >= ").push_bind(start_time.hour()).push(")");
     query_builder.push(" or (day > ").push_bind(start_time.date()).push(" and day < ").push_bind(end_time.date()).push(")");
-    query_builder.push(" or (day = ").push_bind(end_time.date()).push(" and hour < ").push_bind(end_time.hour()).push(")");
+    query_builder.push(" or (day = ").push_bind(end_time.date()).push(" and hour <= ").push_bind(end_time.hour()).push(")");
     let query = query_builder.build_query_as::<MonitorHour>();
     tracing::debug!("查询一天的小时监控数据SQL: {}", query.sql());
     let res = query.fetch_all(pool).await;

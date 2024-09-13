@@ -39,6 +39,10 @@ pub async fn init(app_state: &AppState) -> anyhow::Result<()> {
             if res.is_err() {
                 tracing::error!("收集天监控数据出错: {:?}", &res);
             }
+            let res = statistics_svc::tg_notify_daily_statistics(&app_state, statistic_date.date_naive()).await;
+            if res.is_err() {
+                tracing::error!("tg消息发送出错: {:?}", &res);
+            }
         })
     })?).await?;
 
