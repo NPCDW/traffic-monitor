@@ -124,7 +124,7 @@ pub async fn collect_hour_data(
         traffic_show(uplink_traffic_usage),
         traffic_show(downlink_traffic_usage)
     );
-    let monitor_hour = MonitorHour {
+    let mut monitor_hour = MonitorHour {
         id: None,
         create_time: None,
         day: Some(day.date()),
@@ -134,7 +134,8 @@ pub async fn collect_hour_data(
     };
     let entity = monitor_hour_mapper::get_day_hour_data(day.date(), start_time.hour(), &app_state.db_pool).await?;
     if let Some(entity) = entity {
-        monitor_hour_mapper::update(entity, &app_state.db_pool).await?;
+        monitor_hour.id = entity.id;
+        monitor_hour_mapper::update(monitor_hour, &app_state.db_pool).await?;
     } else {
         monitor_hour_mapper::create(monitor_hour, &app_state.db_pool).await?;
     }
@@ -156,7 +157,7 @@ pub async fn collect_day_data(
         traffic_show(uplink_traffic_usage),
         traffic_show(downlink_traffic_usage)
     );
-    let monitor_day = MonitorDay {
+    let mut monitor_day = MonitorDay {
         id: None,
         create_time: None,
         day: Some(statistic_date),
@@ -165,7 +166,8 @@ pub async fn collect_day_data(
     };
     let entity = monitor_day_mapper::get_day_data(statistic_date, &app_state.db_pool).await?;
     if let Some(entity) = entity {
-        monitor_day_mapper::update(entity, &app_state.db_pool).await?;
+        monitor_day.id = entity.id;
+        monitor_day_mapper::update(monitor_day, &app_state.db_pool).await?;
     } else {
         monitor_day_mapper::create(monitor_day, &app_state.db_pool).await?;
     }
