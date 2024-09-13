@@ -35,16 +35,6 @@ pub async fn frist_collect(app_state: &AppState) -> anyhow::Result<()> {
         return anyhow::Ok(());
     }
     collect_second_data(app_state).await?;
-    collect_hour_data(app_state, pre_end_time).await?;
-    // todo 查询是否有 pre_end_time 的小时统计数据，或当前正在另一个小时的定时任务之前
-    if pre_end_time.minute() <= 1 {
-        collect_hour_data(app_state, pre_end_time - chrono::Duration::hours(1)).await?;
-    }
-    collect_day_data(app_state, pre_end_time.date()).await?;
-    if pre_end_time.hour() == 0 && pre_end_time.minute() <= 2
-    {
-        collect_day_data(app_state, pre_end_time.date() - chrono::Duration::days(1)).await?;
-    }
     anyhow::Ok(())
 }
 
