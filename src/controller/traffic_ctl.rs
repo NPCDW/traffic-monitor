@@ -1,11 +1,44 @@
 use crate::{
-    config::state::AppState,
-    mapper::{monitor_day_mapper, monitor_hour_mapper, monitor_second_mapper},
-    util::response_util::ApiResponse,
+    config::state::AppState, mapper::{monitor_day_mapper, monitor_hour_mapper, monitor_second_mapper::{self, MonitorSecond}}, service::statistics_svc, util::response_util::ApiResponse
 };
 use axum::{extract::State, response::IntoResponse, Json};
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModifyDataParam {
+    pub uplink_traffic_usage: i64,
+    pub downlink_traffic_usage: i64,
+}
+
+pub async fn modify_data(
+    State(app_state): State<AppState>,
+    body: Json<ModifyDataParam>,
+) -> impl IntoResponse {
+    let now = chrono::Local::now().naive_local();
+    let data = MonitorSecond {
+        id: None,
+        create_time: None,
+        start_time: Some(now),
+        end_time: Some(now),
+        uplink_traffic_readings: Some(0),
+        downlink_traffic_readings: Some(0),
+        uplink_traffic_usage: Some(body.uplink_traffic_usage),
+        downlink_traffic_usage: Some(body.downlink_traffic_usage),
+        time_interval: Some(0),
+        is_corrected: Some(1),
+    };
+    match monitor_second_mapper::create(data, &app_state.db_pool).await {
+        Ok(res) => {
+            let _ = statistics_svc::collect_hour_data(&app_state, now).await;
+        
+            let _ = statistics_svc::collect_day_data(&app_state, now.date()).await;
+        
+            return ApiResponse::ok_data(res.rows_affected())
+        },
+        Err(e) => return ApiResponse::error(&format!("添加数据失败: {}", e)),
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PageMonitorDayParam {
