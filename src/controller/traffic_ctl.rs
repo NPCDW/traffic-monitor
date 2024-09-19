@@ -33,6 +33,8 @@ pub async fn modify_data(
             let _ = statistics_svc::collect_hour_data(&app_state, now).await;
         
             let _ = statistics_svc::collect_day_data(&app_state, now.date()).await;
+
+            let _ = statistics_svc::verify_exceeds_limit(&app_state, (body.uplink_traffic_usage, body.downlink_traffic_usage)).await;
         
             return ApiResponse::ok_data(res.rows_affected())
         },

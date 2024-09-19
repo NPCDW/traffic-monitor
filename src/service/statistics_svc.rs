@@ -309,7 +309,7 @@ fn traffic_show<T: Into<Decimal>>(bytes: T) -> String {
     }
 }
 
-async fn verify_exceeds_limit(
+pub async fn verify_exceeds_limit(
     app_state: &AppState,
     (uplink_traffic_usage, downlink_traffic_usage): (i64, i64),
 ) -> anyhow::Result<()> {
