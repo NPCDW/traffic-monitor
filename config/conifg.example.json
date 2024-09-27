@@ -10,7 +10,8 @@
     "tg": { // 可选，telegram 每日通知，流量过半通知，流量过80%通知，流量过90%通知，流量超限通知
         "bot_token": "123456789:QEWEDesfdewqfewfqeqWEQEWQ", // 必填，bot token
         "chat_id": "-1001234567890", // 必填，聊天ID
-        "topic_id": 0 // 可选，主题ID
+        "topic_id": 0, // 可选，主题ID
+        "daily_report": true // 可选，每日通知，默认 true
     },
     "traffic_cycle": { // 可选，流量周期
         "cycle_type": "month", // 必填，周期类型，当前支持 天: day 月: month 一次不循环(月抛、季抛): once

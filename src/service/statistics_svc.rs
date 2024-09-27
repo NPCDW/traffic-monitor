@@ -187,6 +187,9 @@ pub async fn tg_notify_daily_statistics(app_state: &AppState, day: NaiveDate) ->
         Some(tg) => tg,
         None => return anyhow::Ok(()),
     };
+    if !tg.daily_report {
+        return anyhow::Ok(());
+    }
     let entity = match monitor_day_mapper::get_day_data(day, &app_state.db_pool).await? {
         Some(entity) => entity,
         None => return Err(anyhow!("未找到当天的统计数据")),

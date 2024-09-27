@@ -32,6 +32,8 @@ pub struct TgConfig {
     pub chat_id: String,
     #[serde_inline_default(0)]
     pub topic_id: u64,
+    #[serde_inline_default(true)]
+    pub daily_report: bool,
 }
 
 #[serde_inline_default]
