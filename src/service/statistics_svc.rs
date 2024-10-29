@@ -242,7 +242,7 @@ pub async fn tg_notify_daily_statistics(app_state: &AppState, day: NaiveDate) ->
                 }
             };
             text = format!(
-                "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n上一周期已结束",
+                "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n上一周期已结束\n流量 {}% 天数 100%",
                 text,
                 traffic_show(yesterday_traffic_usage),
                 pre_start,
@@ -250,7 +250,8 @@ pub async fn tg_notify_daily_statistics(app_state: &AppState, day: NaiveDate) ->
                 traffic_show(cycle_day_uplink_traffic_usage),
                 traffic_show(cycle_day_downlink_traffic_usage),
                 traffic_show(cycle_traffic_usage),
-                traffic_show(cycle.traffic_limit)
+                traffic_show(cycle.traffic_limit),
+                format!("{:.0}", Decimal::from_i64(cycle_traffic_usage).unwrap() / Decimal::from_i64(cycle.traffic_limit).unwrap() * Decimal::from_i64(100).unwrap())
             );
         } else {
             let (cycle_day_uplink_traffic_usage, cycle_day_downlink_traffic_usage) =
@@ -271,8 +272,10 @@ pub async fn tg_notify_daily_statistics(app_state: &AppState, day: NaiveDate) ->
                     cycle_day_uplink_traffic_usage + cycle_day_downlink_traffic_usage
                 }
             };
+            let remain_day = (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days() + 1;
+            let total_day = (cycle.current_cycle_end_date - cycle.current_cycle_start_date).num_days() + 1;
             text = format!(
-                "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n距下次重置: {}天",
+                "{} 计入流量: {}\n{} ~ {} 上传: {} 下载: {} 计入流量: {}/{}\n距下次重置: {}天\n流量 {}% 天数 {}%",
                 text,
                 traffic_show(yesterday_traffic_usage),
                 cycle.current_cycle_start_date,
@@ -281,8 +284,9 @@ pub async fn tg_notify_daily_statistics(app_state: &AppState, day: NaiveDate) ->
                 traffic_show(cycle_day_downlink_traffic_usage),
                 traffic_show(cycle_traffic_usage),
                 traffic_show(cycle.traffic_limit),
-                (cycle.current_cycle_end_date - chrono::Local::now().date_naive()).num_days()
-                    + 1
+                remain_day,
+                format!("{:.0}", Decimal::from_i64(cycle_traffic_usage).unwrap() / Decimal::from_i64(cycle.traffic_limit).unwrap() * Decimal::from_i64(100).unwrap()),
+                format!("{:.0}", Decimal::from_i64(remain_day).unwrap() / Decimal::from_i64(total_day).unwrap() * Decimal::from_i64(100).unwrap()),
             );
         }
     }
