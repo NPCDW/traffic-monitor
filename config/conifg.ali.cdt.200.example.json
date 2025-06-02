@@ -13,6 +13,21 @@
         "traffic_reset_date": "2024-08-01",
         "traffic_limit": "200GB",
         "statistic_method": "max(in,out)",
-        "exec": "nsenter -a -t 1 sh -c 'shutdown -h now'"
+        "notify": [
+            {
+                "percent": 50,
+                "exec": "echo traffic50%"
+            },
+            {
+                "percent": 80
+            },
+            {
+                "percent": 90
+            },
+            {
+                "percent": 100,
+                "exec": "nsenter -a -t 1 sh -c 'shutdown -h now'"
+            }
+        ]
     }
 }

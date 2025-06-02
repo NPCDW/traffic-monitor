@@ -7,7 +7,7 @@ use rust_decimal_macros::dec;
 use serde_json::json;
 
 use crate::{
-    config::state::{AppState, CycleAppState, CycleStatisticMethod, CycleType},
+    config::state::{AppState, CycleAppState, CycleNotifyAppState, CycleStatisticMethod, CycleType},
     mapper::{
         monitor_day_mapper::{self, MonitorDay},
         monitor_hour_mapper::{self, MonitorHour},
@@ -348,77 +348,42 @@ pub async fn verify_exceeds_limit(
         traffic_show(traffic_usage),
         traffic_show(traffic_limit)
     );
-    if traffic_usage >= traffic_limit {
-        if !cycle.notify_exceeds {
-            tracing::warn!("{} 流量超限", config.vps_name);
-            cycle.notify_exceeds = true;
-            let text = format!(
-                "{} 流量超限 {}/{}",
-                config.vps_name,
-                traffic_show(traffic_usage),
-                traffic_show(traffic_limit)
-            );
-            tg_util::send_msg(config, text).await;
-        }
-    } else if traffic_usage >= traffic_limit * dec!(0.9) {
-        if !cycle.notify_90 {
-            tracing::warn!("{} 流量使用超90%", config.vps_name);
-            cycle.notify_90 = true;
-            let text = format!(
-                "{} 流量使用超90% {}/{}",
-                config.vps_name,
-                traffic_show(traffic_usage),
-                traffic_show(traffic_limit)
-            );
-            tg_util::send_msg(config, text).await;
-        }
-    } else if traffic_usage >= traffic_limit * dec!(0.8) {
-        if !cycle.notify_80 {
-            tracing::warn!("{} 流量使用超80%", config.vps_name);
-            cycle.notify_80 = true;
-            let text = format!(
-                "{} 流量使用超80% {}/{}",
-                config.vps_name,
-                traffic_show(traffic_usage),
-                traffic_show(traffic_limit)
-            );
-            tg_util::send_msg(config, text).await;
-        }
-    } else if traffic_usage >= traffic_limit * dec!(0.5) {
-        if !cycle.notify_half {
-            tracing::warn!("{} 流量使用超半", config.vps_name);
-            cycle.notify_half = true;
-            let text = format!(
-                "{} 流量使用超半 {}/{}",
-                config.vps_name,
-                traffic_show(traffic_usage),
-                traffic_show(traffic_limit)
-            );
-            tg_util::send_msg(config, text).await;
+    for notify in &mut cycle.notify {
+        if traffic_usage >= traffic_limit / dec!(100) * Decimal::from_u8(notify.percent).unwrap() {
+            if !notify.finished {
+                tracing::warn!("{} 流量使用超{}%", config.vps_name, notify.percent);
+                let text = format!(
+                    "{} 流量使用超90% {}/{}",
+                    config.vps_name,
+                    traffic_show(traffic_usage),
+                    traffic_show(traffic_limit)
+                );
+                tg_util::send_msg(config, text).await;
+                if let Some(exec) = &notify.exec {
+                    tracing::info!("流量使用超出限制，执行命令: {}", exec);
+                    match command_util::execute_to_output(".".to_string(), vec![exec.clone()]).await {
+                        Ok(res) => {
+                            if res.status.success() {
+                                tracing::info!(
+                                    "执行命令成功，执行结果: {}",
+                                    String::from_utf8_lossy(&res.stdout)
+                                )
+                            } else {
+                                tracing::info!(
+                                    "执行命令失败，执行结果: {}",
+                                    String::from_utf8_lossy(&res.stderr)
+                                )
+                            }
+                        }
+                        Err(e) => tracing::info!("命令提交失败: {:?}", e),
+                    }
+                }
+                notify.finished = true;
+            }
+            break;
         }
     }
     *app_state.cycle.write().await = Some(cycle);
-    if traffic_usage >= traffic_limit {
-        if let Some(exec) = &config.traffic_cycle.as_ref().unwrap().exec {
-            tracing::info!("流量使用超出限制，执行命令: {}", exec);
-            match command_util::execute_to_output(".".to_string(), vec![exec.clone()]).await {
-                Ok(res) => {
-                    if res.status.success() {
-                        tracing::info!(
-                            "执行命令成功，执行结果: {}",
-                            String::from_utf8_lossy(&res.stdout)
-                        )
-                    } else {
-                        tracing::info!(
-                            "执行命令失败，执行结果: {}",
-                            String::from_utf8_lossy(&res.stderr)
-                        )
-                    }
-                }
-                Err(e) => tracing::info!("命令提交失败: {:?}", e),
-            }
-        }
-    }
     return anyhow::Ok(());
 }
 
@@ -550,6 +515,18 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         CycleStatisticMethod::OnlyOut => uplink_traffic_usage,
         CycleStatisticMethod::SumInOut => uplink_traffic_usage + downlink_traffic_usage,
     };
+    let mut cycle_notify_list = vec![];
+    if let Some(notify) = &liftcycle.notify {
+        let mut notify = notify.clone();
+        notify.sort_by(|a, b| b.percent.cmp(&a.percent));
+        for ele in notify {
+            cycle_notify_list.push(CycleNotifyAppState {
+                percent: ele.percent,
+                exec: ele.exec,
+                finished: false,
+            });
+        }
+    }
     let cycle = CycleAppState {
         cycle_type,
         current_cycle_start_date,
@@ -558,10 +535,7 @@ async fn generate_cycle(app_state: &AppState) -> anyhow::Result<()> {
         downlink_traffic_usage,
         traffic_limit,
         traffic_usage,
-        notify_exceeds: false,
-        notify_half: false,
-        notify_80: false,
-        notify_90: false,
+        notify: cycle_notify_list,
         statistic_method,
     };
     tracing::info!("流量周期: {:#?}", &cycle);

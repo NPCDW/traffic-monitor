@@ -18,6 +18,13 @@ pub enum CycleType {
     ONCE(chrono::NaiveDate, chrono::NaiveDate),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CycleNotifyAppState {
+    pub percent: u8,
+    pub finished: bool,
+    pub exec: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CycleAppState {
     pub cycle_type: CycleType,
@@ -27,10 +34,7 @@ pub struct CycleAppState {
     pub downlink_traffic_usage: i64,
     pub traffic_usage: i64,
     pub traffic_limit: i64,
-    pub notify_exceeds: bool,
-    pub notify_half: bool,
-    pub notify_80: bool,
-    pub notify_90: bool,
+    pub notify: Vec<CycleNotifyAppState>,
     pub statistic_method: CycleStatisticMethod,
 }
 

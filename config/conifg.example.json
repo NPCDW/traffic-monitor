@@ -24,6 +24,21 @@
         
         "traffic_limit": "200GB", // 必填，流量限制 1.5TB  200GB  600MB
         "statistic_method": "sum(in,out)", // 必填，统计方法，当前支持 双向计算: sum(in,out) 只记出方向: out 入出取大: max(in,out)
-        "exec": "nsenter -a -t 1 sh -c 'shutdown -h now'" // 可选，流量到达限制后执行的命令，不填此值流量到达限制不进行任何操作，示例: 立即关机 shutdown -h now (如果在 docker 中，需执行: nsenter -a -t 1 sh -c 'shutdown -h now')
+        "notify": [  // 可选，流量到达限制后进行通知
+            {
+                "percent": 50,  // 必填，以 100 为基数，流量达到此百分比时进行通知
+                "exec": "echo traffic50%"
+            },
+            {
+                "percent": 80
+            },
+            {
+                "percent": 90
+            },
+            {
+                "percent": 100,
+                "exec": "nsenter -a -t 1 sh -c 'shutdown -h now'"  // 可选，流量到达限制后执行的命令，不填此值流量到达限制不进行任何操作，示例: 立即关机 shutdown -h now (如果在 docker 中，需执行: nsenter -a -t 1 sh -c 'shutdown -h now')
+            }
+        ]
     }
 }

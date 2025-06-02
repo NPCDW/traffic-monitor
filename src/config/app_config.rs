@@ -4,6 +4,12 @@ use serde::{Serialize, Deserialize};
 use crate::util::file_util;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TrafficCycleNotifyConfig {
+    pub percent: u8,
+    pub exec: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TrafficCycleConfig {
     pub cycle_type: String,
     pub each: Option<i64>,
@@ -12,7 +18,7 @@ pub struct TrafficCycleConfig {
     pub end_date: Option<String>,
     pub traffic_limit: String,
     pub statistic_method: String,
-    pub exec: Option<String>,
+    pub notify: Option<Vec<TrafficCycleNotifyConfig>>,
 }
 
 #[serde_inline_default]
