@@ -353,8 +353,9 @@ pub async fn verify_exceeds_limit(
             if !notify.finished {
                 tracing::warn!("{} 流量使用超{}%", config.vps_name, notify.percent);
                 let text = format!(
-                    "{} 流量使用超90% {}/{}",
+                    "{} 流量使用超{}% {}/{}",
                     config.vps_name,
+                    notify.percent,
                     traffic_show(traffic_usage),
                     traffic_show(traffic_limit)
                 );

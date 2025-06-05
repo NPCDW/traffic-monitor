@@ -34,7 +34,7 @@ pub async fn init(app_state: AppState) -> Router {
     Router::new()
         .nest("/api", api)
         .layer(ValidateRequestHeaderLayer::bearer(&web.token))
-        .nest_service("/", ServeDir::new(web.ui_path))
+        .fallback_service(ServeDir::new(web.ui_path))
         .layer(CatchPanicLayer::custom(handle_panic))
         .with_state(app_state)
 }
