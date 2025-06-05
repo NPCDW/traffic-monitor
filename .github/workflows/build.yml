@@ -39,7 +39,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        build: [linux, macos, windows]
+        build: [linux, macos]
         include:
           - build: linux
             os: ubuntu-latest
@@ -51,11 +51,6 @@ jobs:
             rust: stable
             target: x86_64-apple-darwin
             archive-name: traffic-monitor-${{ github.ref_name }}-macos-amd64.tar.gz
-          - build: windows
-            os: windows-latest
-            rust: stable-x86_64-msvc
-            target: x86_64-pc-windows-msvc
-            archive-name: traffic-monitor-${{ github.ref_name }}-windows-amd64.7z
     steps:
     - uses: actions/checkout@v4
       with:
