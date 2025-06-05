@@ -31,3 +31,57 @@ jobs:
           tags: |
             npcdw/traffic-monitor:${{ github.ref_name }}
             npcdw/traffic-monitor:latest
+  
+  binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+            archive-name: traffic-monitor-${{ github.ref_name }}-linux-amd64.tar.gz
+          - build: macos
+            os: macos-latest
+            rust: stable
+            target: x86_64-apple-darwin
+            archive-name: traffic-monitor-${{ github.ref_name }}-macos-amd64.tar.gz
+          - build: windows
+            os: windows-latest
+            rust: stable-x86_64-msvc
+            target: x86_64-pc-windows-msvc
+            archive-name: traffic-monitor-${{ github.ref_name }}-windows-amd64.7z
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        target: ${{ matrix.target }}
+    - name: Build
+      run: cargo build --verbose --release --target ${{ matrix.target }}
+      env:
+        RUST_BACKTRACE: 1
+    - name: Strip binary (linux and macos)
+      if: matrix.build == 'linux' || matrix.build == 'macos'
+      run: strip "target/${{ matrix.target }}/release/traffic-monitor"
+    - name: Build archive
+      shell: bash
+      run: |
+        mkdir archive
+        cp LICENSE README.md archive/
+        cd archive
+        if [ "${{ matrix.build }}" = "windows" ]; then
+          cp "../target/${{ matrix.target }}/release/traffic-monitor.exe" ./
+          7z a "${{ matrix.archive-name }}" LICENSE README.md traffic-monitor.exe
+        else
+          cp "../target/${{ matrix.target }}/release/traffic-monitor" ./
+          tar -czf "${{ matrix.archive-name }}" LICENSE README.md traffic-monitor
+        fi
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: archive/${{ matrix.archive-name }}
+
