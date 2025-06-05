@@ -118,7 +118,7 @@ pub async fn list_monitor_second(
 pub async fn send_today_statistics(
     State(app_state): State<AppState>,
 ) -> impl IntoResponse {
-    if let Some(_) = app_state.config.tg {
+    if app_state.config.tg.is_none() {
         return ApiResponse::error("未配置 TG bot");
     }
     match statistics_svc::tg_notify_daily_statistics(&app_state, chrono::Local::now().date_naive()).await {
