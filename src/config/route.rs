@@ -20,6 +20,7 @@ pub async fn init(app_state: AppState) -> Router {
 
     let traffic = Router::new()
         .route("/modify_data", post(traffic_ctl::modify_data))
+        .route("/send_today_statistics", post(traffic_ctl::send_today_statistics))
         .route("/day", post(traffic_ctl::list_monitor_day))
         .route("/hour", post(traffic_ctl::list_monitor_hour))
         .route("/second", post(traffic_ctl::list_monitor_second));
